@@ -1,0 +1,20 @@
+[
+  {
+    "img": "stacked-crones.jpg",
+    "answers": [["cracked","stones"], ["stacked","crones"]],
+    "hints": [
+      "Both phrases rhyme across pairs.",
+      "Think fractures… and elders in formation.",
+      "Initials are C-S and S-C."
+    ]
+  },
+  {
+    "img": "./puzzles/teal-sailor.png",
+    "answers": [["teal","sailor"], ["seal","tailor"]],
+    "hints": [
+      "Ocean scene with measuring involved.",
+      "Pins vs fins.",
+      "Swap the starting consonants."
+    ]
+  }
+]
