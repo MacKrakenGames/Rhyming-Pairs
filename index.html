@@ -12,9 +12,36 @@
     h1 { font-size:1.25rem; margin:0; color:var(--fg); }
     .timer { font-variant-numeric:tabular-nums; padding:8px 12px; border:1px solid #2a2f49; border-radius:10px; color:var(--accent); }
     .card { background:#151935; border:1px solid #2a2f49; border-radius:16px; padding:16px; margin-top:16px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
-    .imgbox { aspect-ratio:16/9; background:#0a0d1f; border:1px dashed #2a2f49; border-radius:12px; display:grid; place-items:center; overflow:hidden; }
-    .imgbox img { width:100%; height:100%; object-fit:cover; }
+    /* Responsive image stage that adapts to any aspect ratio */
+    .imgbox { 
+      width:100%;
+      min-height:220px;               /* keeps a nice stage on narrow screens */
+      max-height:70vh;                /* never exceed 70% of viewport height */
+      background:#0a0d1f; 
+      border:1px dashed #2a2f49; 
+      border-radius:12px; 
+      display:flex; 
+      align-items:center; 
+      justify-content:center; 
+      overflow:hidden; 
+      position:relative;
+    }
+    .imgbox::before{                  /* subtle checker to make transparency obvious */
+      content:""; position:absolute; inset:0; pointer-events:none;
+      background-image: linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%),
+                        linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%);
+      background-size: 20px 20px; background-position: 0 0,10px 10px;
+      border-radius:12px;
+    }
+    .imgbox img { 
+      max-width:100%;
+      max-height:100%;
+      width:auto; height:auto;        /* natural size until constrained by the box */
+      object-fit:contain;             /* no cropping; letterbox/pillarbox as needed */
+      display:block;
+    }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+    @media (max-width:560px){ .row{ grid-template-columns:1fr; } }
     input[type="text"] { width:100%; padding:12px 14px; border-radius:12px; border:1px solid #2a2f49; background:#0f1330; color:var(--fg); }
     input::placeholder { color:var(--muted); }
     .actions { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
@@ -246,8 +273,28 @@
       $status.textContent = ""; $status.className = "status"; $hint.textContent = ""; $hint.dataset.n = "0"; penaltyMs = 0;
       disableUI(true);
       const img = new Image();
-      img.onload = () => { $img.src = p.img; disableUI(false); $a1.focus(); startTimer(); };
-      img.onerror = () => { setStatus("Image failed to load.", "bad"); disableUI(false); };
+      img.onload = () => {
+        // Dynamically size container height to preserve big/tall images nicely
+        const naturalAR = img.naturalWidth / img.naturalHeight;
+        const wrap = document.querySelector('.wrap');
+        const stage = document.querySelector('.imgbox');
+        const maxW = wrap.getBoundingClientRect().width - 2; // minus borders
+        const maxH = Math.min(window.innerHeight * 0.7, 800); // cap huge desktops
+        // Compute fit like CSS contain but we also set an explicit stage height for stable layout
+        let targetH = maxW / naturalAR;        // height if constrained by width
+        if (targetH > maxH) targetH = maxH;    // constrain overly tall images
+        stage.style.height = targetH + 'px';
+        $img.src = p.img; 
+        disableUI(false); 
+        $a1.focus(); 
+        startTimer(); 
+      };
+      img.onerror = () => { 
+        const stage = document.querySelector('.imgbox');
+        stage.style.height = 'auto';
+        setStatus("Image failed to load. Check the path in puzzles.json.", "bad"); 
+        disableUI(false); 
+      };
       img.src = p.img;
     }
 
@@ -279,8 +326,24 @@
     [$a1,$a2,$b1,$b2].forEach(el => el.addEventListener("keydown", e => { if (e.key === "Enter") checkAnswer(); }));
 
     // Start
+    window.addEventListener('resize', () => {
+      // Recompute stage height on resize for current image
+      const p = PUZZLES[ix];
+      if (!$img.src) return;
+      const img = new Image();
+      img.onload = () => {
+        const naturalAR = img.naturalWidth / img.naturalHeight;
+        const wrap = document.querySelector('.wrap');
+        const stage = document.querySelector('.imgbox');
+        const maxW = wrap.getBoundingClientRect().width - 2;
+        const maxH = Math.min(window.innerHeight * 0.7, 800);
+        let targetH = maxW / naturalAR;
+        if (targetH > maxH) targetH = maxH;
+        stage.style.height = targetH + 'px';
+      };
+      img.src = p.img;
+    });
     boot();
   </script>
 </body>
 </html>
-
