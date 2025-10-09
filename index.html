@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">\>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Rhyming Pairs — MVP</title>
+  <style>
+    :root { --bg:#0f1221; --fg:#e9ecf1; --muted:#aab0c0; --accent:#7bd3ff; --ok:#78e08f; --bad:#ff7675; }
+    html,body { margin:0; height:100%; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg); color:var(--fg); }
+    .wrap { max-width:900px; margin:0 auto; padding:24px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:16px; }
+    h1 { font-size:1.25rem; margin:0; color:var(--fg); }
+    .timer { font-variant-numeric:tabular-nums; padding:8px 12px; border:1px solid #2a2f49; border-radius:10px; color:var(--accent); }
+    .card { background:#151935; border:1px solid #2a2f49; border-radius:16px; padding:16px; margin-top:16px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+    .imgbox { aspect-ratio:16/9; background:#0a0d1f; border:1px dashed #2a2f49; border-radius:12px; display:grid; place-items:center; overflow:hidden; }
+    .imgbox img { width:100%; height:100%; object-fit:cover; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+    input[type="text"] { width:100%; padding:12px 14px; border-radius:12px; border:1px solid #2a2f49; background:#0f1330; color:var(--fg); }
+    input::placeholder { color:var(--muted); }
+    .actions { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+    button { padding:10px 14px; border-radius:12px; border:1px solid #2a2f49; background:#1a1f44; color:var(--fg); cursor:pointer; }
+    button:hover { filter:brightness(1.1); }
+    .hint { color:var(--muted); margin-top:8px; min-height:1.4em; }
+    .status { margin-top:8px; font-weight:600; }
+    .status.ok { color:var(--ok); }
+    .status.bad { color:var(--bad); }
+    .small { color:var(--muted); font-size:.9rem; }
+    .pill { display:inline-block; padding:3px 8px; border-radius:999px; background:#101537; border:1px solid #2a2f49; color:var(--muted); margin-left:6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Rhyming Pairs <span id="puzzleNum" class="pill"></span></h1>
+      <div class="timer" id="timer">00:00.0</div>
+    </header>
+
+    <div class="card">
+      <div class="imgbox">
+        <img id="puzzleImg" alt="Puzzle image" />
+      </div>
+
+      <div class="row">
+        <input id="pairA1" type="text" placeholder="first phrase — word 1 (e.g., cracked)" autocomplete="off" />
+        <input id="pairA2" type="text" placeholder="first phrase — word 2 (e.g., stones)" autocomplete="off" />
+      </div>
+      <div class="row">
+        <input id="pairB1" type="text" placeholder="second phrase — word 1 (e.g., stacked)" autocomplete="off" />
+        <input id="pairB2" type="text" placeholder="second phrase — word 2 (e.g., crones)" autocomplete="off" />
+      </div>
+
+      <div class="actions">
+        <button id="checkBtn">Check Answer</button>
+        <button id="hintBtn">Hint</button>
+        <button id="skipBtn">Next Puzzle</button>
+        <span class="small">Hints add +10s to your time.</span>
+      </div>
+
+      <div id="hint" class="hint"></div>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div class="card small">
+      <div><strong>How to win:</strong> Enter the two 2-word phrases that the image depicts (order doesn’t matter). Example target set: <code>cracked stones</code> + <code>stacked crones</code>.</div>
+    </div>
+  </div>
+
+  <script>
+    const PUZZLES = [
+      {
+        img: "https://images.unsplash.com/photo-1520974692280-5f4a1d1f0b9c?w=1200&q=80",
+        answers: [ ["cracked","stones"], ["stacked","crones"] ],
+        hints: [
+          "Both phrases rhyme internally across pairs.",
+          "Think stone fractures… and a coven doing gymnastics.",
+          "One starts with C-R, the other with S-T."
+        ]
+      },
+      {
+        img: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1200&q=80",
+        answers: [ ["teal","sailor"], ["seal","tailor"] ],
+        hints: [
+          "Marine scene with measuring involved.",
+          "One character wears pins; the other wears fins.",
+          "Swap the starting consonants."
+        ]
+      }
+    ];
+
+    let ix = 0;
+    let startTs = 0;
+    let tickHandle = null;
+    let elapsedMs = 0;
+    let penaltyMs = 0;
+    const fmt = s => s.trim().toLowerCase().replace(/[^a-z']/g,"");
+
+    const $img = document.getElementById("puzzleImg");
+    const $timer = document.getElementById("timer");
+    const $status = document.getElementById("status");
+    const $hint = document.getElementById("hint");
+    const $num = document.getElementById("puzzleNum");
+    const $a1 = document.getElementById("pairA1");
+    const $a2 = document.getElementById("pairA2");
+    const $b1 = document.getElementById("pairB1");
+    const $b2 = document.getElementById("pairB2");
+    const $check = document.getElementById("checkBtn");
+    const $hintBtn = document.getElementById("hintBtn");
+    const $skip = document.getElementById("skipBtn");
+
+    function loadPuzzle(i) {
+      const p = PUZZLES[i];
+      $img.src = p.img;
+      $num.textContent = `#${i+1}/${PUZZLES.length}`;
+      [$a1,$a2,$b1,$b2].forEach(el => el.value = "");
+      $status.textContent = "";
+      $status.className = "status";
+      $hint.textContent = "";
+      penaltyMs = 0;
+      startTimer();
+      $a1.focus();
+    }
+
+    function startTimer() {
+      stopTimer();
+      startTs = performance.now();
+      tickHandle = setInterval(() => {
+        elapsedMs = performance.now() - startTs + penaltyMs;
+        $timer.textContent = formatMs(elapsedMs);
+      }, 100);
+    }
+    function stopTimer() { if (tickHandle) { clearInterval(tickHandle); tickHandle = null; } }
+    function formatMs(ms) {
+      const t = Math.floor(ms);
+      const m = Math.floor(t/60000);
+      const s = Math.floor((t%60000)/1000);
+      const d = Math.floor((t%1000)/100);
+      return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${d}`;
+    }
+
+    function phrasesFromInputs() {
+      const p1 = [fmt($a1.value), fmt($a2.value)];
+      const p2 = [fmt($b1.value), fmt($b2.value)];
+      if (!p1[0] || !p1[1] || !p2[0] || !p2[1]) return null;
+      return [p1, p2];
+    }
+
+    function equalsPhrase(a,b){ return a[0]===b[0] && a[1]===b[1]; }
+
+    function checkAnswer() {
+      const p = PUZZLES[ix];
+      const typed = phrasesFromInputs();
+      if (!typed) {
+        setStatus("Please fill out all four words.", "bad");
+        return;
+      }
+      const [t1,t2] = typed;
+      const A = p.answers;
+      const ok = (equalsPhrase(t1,A[0]) && equalsPhrase(t2,A[1])) || (equalsPhrase(t1,A[1]) && equalsPhrase(t2,A[0]));
+      if (ok) {
+        stopTimer();
+        setStatus(`Correct! Time: ${formatMs(elapsedMs)} — Great job.`, "ok");
+      } else {
+        setStatus("Not quite—keep trying!", "bad");
+      }
+    }
+
+    function setStatus(msg,cls){ $status.textContent = msg; $status.className = `status ${cls}`; }
+
+    function useHint() {
+      const p = PUZZLES[ix];
+      const shown = $hint.dataset.n ? parseInt($hint.dataset.n,10) : 0;
+      if (shown < p.hints.length) {
+        $hint.textContent = p.hints.slice(0, shown+1).join("  •  ");
+        $hint.dataset.n = String(shown+1);
+        penaltyMs += 10000;
+      } else {
+        $hint.textContent = "No more hints.";
+      }
+    }
+
+    function nextPuzzle() {
+      ix = (ix + 1) % PUZZLES.length;
+      loadPuzzle(ix);
+    }
+
+    $check.addEventListener("click", checkAnswer);
+    $hintBtn.addEventListener("click", useHint);
+    $skip.addEventListener("click", nextPuzzle);
+    [$a1,$a2,$b1,$b2].forEach(el => el.addEventListener("keydown", e => { if (e.key === "Enter") checkAnswer(); }));
+
+    loadPuzzle(ix);
+  </script>
+</body>
+</html>
