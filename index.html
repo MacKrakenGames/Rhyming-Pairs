@@ -66,10 +66,31 @@
   </div>
 
   <script>
-    const PUZZLES = [
+    // --- Daily Puzzle + External JSON Loader + Looser Answer Checking ---
+    // Loads /puzzles.json at runtime and picks today by UTC date.
+    // Looser matching: word-order-insensitive (inside a phrase), plural-insensitive,
+    // minor typos (Levenshtein <= 1), ignores hyphens/punctuation/case.
+
+    // Simple schema guard
+    function isPuzzle(obj){
+      return obj && typeof obj.img==='string' && Array.isArray(obj.answers) && obj.answers.length===2 && obj.answers.every(ph => Array.isArray(ph) && ph.length===2) && Array.isArray(obj.hints);
+    }
+
+    // Deterministic daily selector by UTC date (YYYY-MM-DD)
+    function selectDailyIndex(len, date=new Date()){
+      const y = date.getUTCFullYear();
+      const m = String(date.getUTCMonth()+1).padStart(2,'0');
+      const d = String(date.getUTCDate()).padStart(2,'0');
+      const key = `${y}-${m}-${d}`;
+      let h=0; for (let i=0;i<key.length;i++){ h = (h*31 + key.charCodeAt(i)) >>> 0; }
+      return h % len;
+    }
+
+    // Fallback puzzles (used only if fetch fails)
+    const FALLBACK = [
       {
         img: "https://images.unsplash.com/photo-1520974692280-5f4a1d1f0b9c?w=1200&q=80",
-        answers: [ ["cracked","stones"], ["stacked","crones"] ],
+        answers: [["cracked","stones"],["stacked","crones"]],
         hints: [
           "Both phrases rhyme internally across pairs.",
           "Think stone fractures… and a coven doing gymnastics.",
@@ -78,7 +99,7 @@
       },
       {
         img: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1200&q=80",
-        answers: [ ["teal","sailor"], ["seal","tailor"] ],
+        answers: [["teal","sailor"],["seal","tailor"]],
         hints: [
           "Marine scene with measuring involved.",
           "One character wears pins; the other wears fins.",
@@ -87,13 +108,71 @@
       }
     ];
 
+    // --- State ---
+    let PUZZLES = FALLBACK;
     let ix = 0;
     let startTs = 0;
     let tickHandle = null;
     let elapsedMs = 0;
     let penaltyMs = 0;
-    const fmt = s => s.trim().toLowerCase().replace(/[^a-z']/g,"");
 
+    // Normalizer: lowercase, remove non-letters and apostrophes/hyphens
+    const normalize = s => (s||"").toLowerCase().replace(/[^a-z]/g,"").trim();
+
+    // Very small plural stemmer for common English plurals (best-effort, not perfect)
+    function stem(w){
+      if (!w) return w;
+      if (w.endsWith('ies') && w.length>3) return w.slice(0,-3)+'y';           // stories -> story
+      if (w.endsWith('ves') && w.length>3) return w.slice(0,-3)+'f';           // wolves -> wolf (knives->knif, acceptable for fuzzy)
+      if (/(s|x|z|ch|sh)$/.test(w) && w.endsWith('es')) return w.slice(0,-2);  // boxes -> box, wishes -> wish
+      if (w.endsWith('s') && w.length>3) return w.slice(0,-1);                 // stones -> stone
+      return w;
+    }
+
+    // Levenshtein distance with early exit at >1
+    function editDistanceLE1(a,b){
+      const la=a.length, lb=b.length;
+      if (a===b) return true;
+      if (Math.abs(la-lb)>1) return false;
+      // If same length, count mismatches allowing 0 or 1 substitution
+      if (la===lb){
+        let diff=0; for (let i=0;i<la;i++){ if (a[i]!==b[i] && ++diff>1) return false; }
+        return true;
+      }
+      // Ensure a is shorter
+      if (la>lb) return editDistanceLE1(b,a);
+      // Now lb = la+1, allow one insertion in a (or deletion in b)
+      let i=0,j=0,used=false;
+      while(i<la && j<lb){
+        if (a[i]===b[j]){ i++; j++; }
+        else if (!used){ used=true; j++; }
+        else return false;
+      }
+      return true; // any leftover is the one extra char
+    }
+
+    function wordsEqual(a,b){
+      const na = normalize(a), nb = normalize(b);
+      if (!na || !nb) return false;
+      if (na===nb) return true;
+      const sa = stem(na), sb = stem(nb);
+      if (sa===sb) return true;
+      if (editDistanceLE1(na,nb)) return true;
+      if (editDistanceLE1(sa,sb)) return true;
+      return false;
+    }
+
+    // Two-word phrase equality, order-insensitive within the phrase
+    function phraseEqual(typed, target){
+      const [ta,tb] = typed; const [ua,ub] = target;
+      // direct order
+      if (wordsEqual(ta,ua) && wordsEqual(tb,ub)) return true;
+      // swapped order
+      if (wordsEqual(ta,ub) && wordsEqual(tb,ua)) return true;
+      return false;
+    }
+
+    // Elements
     const $img = document.getElementById("puzzleImg");
     const $timer = document.getElementById("timer");
     const $status = document.getElementById("status");
@@ -107,17 +186,10 @@
     const $hintBtn = document.getElementById("hintBtn");
     const $skip = document.getElementById("skipBtn");
 
-    function loadPuzzle(i) {
-      const p = PUZZLES[i];
-      $img.src = p.img;
-      $num.textContent = `#${i+1}/${PUZZLES.length}`;
-      [$a1,$a2,$b1,$b2].forEach(el => el.value = "");
-      $status.textContent = "";
-      $status.className = "status";
-      $hint.textContent = "";
-      penaltyMs = 0;
-      startTimer();
-      $a1.focus();
+    function setStatus(msg,cls){ $status.textContent = msg; $status.className = `status ${cls||''}`; }
+
+    function disableUI(disabled=true){
+      [$a1,$a2,$b1,$b2,$check,$hintBtn,$skip].forEach(el=> el.disabled = disabled);
     }
 
     function startTimer() {
@@ -138,33 +210,21 @@
     }
 
     function phrasesFromInputs() {
-      const p1 = [fmt($a1.value), fmt($a2.value)];
-      const p2 = [fmt($b1.value), fmt($b2.value)];
-      if (!p1[0] || !p1[1] || !p2[0] || !p2[1]) return null;
+      const p1 = [($a1.value||''), ($a2.value||'')];
+      const p2 = [($b1.value||''), ($b2.value||'')];
+      if (!p1[0].trim() || !p1[1].trim() || !p2[0].trim() || !p2[1].trim()) return null;
       return [p1, p2];
     }
-
-    function equalsPhrase(a,b){ return a[0]===b[0] && a[1]===b[1]; }
 
     function checkAnswer() {
       const p = PUZZLES[ix];
       const typed = phrasesFromInputs();
-      if (!typed) {
-        setStatus("Please fill out all four words.", "bad");
-        return;
-      }
-      const [t1,t2] = typed;
-      const A = p.answers;
-      const ok = (equalsPhrase(t1,A[0]) && equalsPhrase(t2,A[1])) || (equalsPhrase(t1,A[1]) && equalsPhrase(t2,A[0]));
-      if (ok) {
-        stopTimer();
-        setStatus(`Correct! Time: ${formatMs(elapsedMs)} — Great job.`, "ok");
-      } else {
-        setStatus("Not quite—keep trying!", "bad");
-      }
+      if (!typed) { setStatus("Please fill out all four words.", "bad"); return; }
+      const [t1,t2] = typed; const A = p.answers;
+      const ok = (phraseEqual(t1,A[0]) && phraseEqual(t2,A[1])) || (phraseEqual(t1,A[1]) && phraseEqual(t2,A[0]));
+      if (ok) { stopTimer(); setStatus(`Correct! Time: ${formatMs(elapsedMs)} — Great job.`, "ok"); }
+      else { setStatus("Not quite—keep trying!", "bad"); }
     }
-
-    function setStatus(msg,cls){ $status.textContent = msg; $status.className = `status ${cls}`; }
 
     function useHint() {
       const p = PUZZLES[ix];
@@ -172,23 +232,55 @@
       if (shown < p.hints.length) {
         $hint.textContent = p.hints.slice(0, shown+1).join("  •  ");
         $hint.dataset.n = String(shown+1);
-        penaltyMs += 10000;
+        penaltyMs += 10000; // +10s per hint
       } else {
         $hint.textContent = "No more hints.";
       }
     }
 
-    function nextPuzzle() {
-      ix = (ix + 1) % PUZZLES.length;
-      loadPuzzle(ix);
+    function loadPuzzleByIndex(index){
+      ix = index;
+      const p = PUZZLES[ix];
+      $num.textContent = `#${ix+1}/${PUZZLES.length}`;
+      [$a1,$a2,$b1,$b2].forEach(el => el.value = "");
+      $status.textContent = ""; $status.className = "status"; $hint.textContent = ""; $hint.dataset.n = "0"; penaltyMs = 0;
+      disableUI(true);
+      const img = new Image();
+      img.onload = () => { $img.src = p.img; disableUI(false); $a1.focus(); startTimer(); };
+      img.onerror = () => { setStatus("Image failed to load.", "bad"); disableUI(false); };
+      img.src = p.img;
     }
 
+    function nextPuzzle() { loadPuzzleByIndex((ix + 1) % PUZZLES.length); }
+
+    async function boot(){
+      disableUI(true);
+      setStatus("Loading today\'s puzzle…", "");
+      try {
+        const res = await fetch('puzzles.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!Array.isArray(data)) throw new Error('JSON root must be an array');
+        const cleaned = data.filter(isPuzzle);
+        if (cleaned.length === 0) throw new Error('No valid puzzles found');
+        PUZZLES = cleaned;
+      } catch (e){
+        console.warn('Using fallback puzzles because fetch failed:', e);
+        setStatus("Using fallback puzzles (add /puzzles.json to control daily puzzles).", "");
+      }
+      const idx = selectDailyIndex(PUZZLES.length, new Date());
+      loadPuzzleByIndex(idx);
+    }
+
+    // Events
     $check.addEventListener("click", checkAnswer);
     $hintBtn.addEventListener("click", useHint);
     $skip.addEventListener("click", nextPuzzle);
     [$a1,$a2,$b1,$b2].forEach(el => el.addEventListener("keydown", e => { if (e.key === "Enter") checkAnswer(); }));
 
-    loadPuzzle(ix);
+    // Start
+    boot();
   </script>
 </body>
 </html>
+
