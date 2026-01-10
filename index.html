@@ -53,6 +53,7 @@
     .status.bad { color:var(--bad); }
     .small { color:var(--muted); font-size:.9rem; }
     .pill { display:inline-block; padding:3px 8px; border-radius:999px; background:#101537; border:1px solid #2a2f49; color:var(--muted); margin-left:6px; }
+    .notice { margin-top:10px; color:#ffd36e; font-weight:600; }
   </style>
 </head>
 <body>
@@ -66,6 +67,7 @@
       <div class="imgbox">
         <img id="puzzleImg" alt="Puzzle image" />
       </div>
+      <div id="availabilityNotice" class="notice" role="status" aria-live="polite"></div>
 
       <div class="row">
         <input id="pairA1" type="text" placeholder="first phrase — word 1 (e.g., cracked)" autocomplete="off" />
@@ -93,8 +95,9 @@
   </div>
 
   <script>
-    // --- Daily Puzzle + External JSON Loader + Looser Answer Checking ---
-    // Loads /puzzles.json at runtime and picks today by UTC date.
+    // --- Daily Puzzle from Filenames + Looser Answer Checking ---
+    // Loads /puzzles directory contents from GitHub, derives answers from filenames,
+    // and picks today's puzzle by UTC date (falls back to most recent earlier puzzle).
     // Looser matching: word-order-insensitive (inside a phrase), plural-insensitive,
     // minor typos (Levenshtein <= 1), ignores hyphens/punctuation/case.
 
@@ -103,14 +106,15 @@
       return obj && typeof obj.img==='string' && Array.isArray(obj.answers) && obj.answers.length===2 && obj.answers.every(ph => Array.isArray(ph) && ph.length===2) && Array.isArray(obj.hints);
     }
 
-    // Deterministic daily selector by UTC date (YYYY-MM-DD)
-    function selectDailyIndex(len, date=new Date()){
+    function formatDateKey(date){
       const y = date.getUTCFullYear();
       const m = String(date.getUTCMonth()+1).padStart(2,'0');
       const d = String(date.getUTCDate()).padStart(2,'0');
-      const key = `${y}-${m}-${d}`;
-      let h=0; for (let i=0;i<key.length;i++){ h = (h*31 + key.charCodeAt(i)) >>> 0; }
-      return h % len;
+      return `${y}-${m}-${d}`;
+    }
+
+    function formatShortMonth(date){
+      return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' });
     }
 
     // Fallback puzzles (used only if fetch fails)
@@ -142,6 +146,7 @@
     let tickHandle = null;
     let elapsedMs = 0;
     let penaltyMs = 0;
+    let availabilityNotice = "";
 
     // Normalizer: lowercase, remove non-letters and apostrophes/hyphens
     const normalize = s => (s||"").toLowerCase().replace(/[^a-z]/g,"").trim();
@@ -205,6 +210,7 @@
     const $status = document.getElementById("status");
     const $hint = document.getElementById("hint");
     const $num = document.getElementById("puzzleNum");
+    const $notice = document.getElementById("availabilityNotice");
     const $a1 = document.getElementById("pairA1");
     const $a2 = document.getElementById("pairA2");
     const $b1 = document.getElementById("pairB1");
@@ -214,6 +220,7 @@
     const $skip = document.getElementById("skipBtn");
 
     function setStatus(msg,cls){ $status.textContent = msg; $status.className = `status ${cls||''}`; }
+    function setNotice(msg){ $notice.textContent = msg; }
 
     function disableUI(disabled=true){
       [$a1,$a2,$b1,$b2,$check,$hintBtn,$skip].forEach(el=> el.disabled = disabled);
@@ -261,7 +268,7 @@
         $hint.dataset.n = String(shown+1);
         penaltyMs += 10000; // +10s per hint
       } else {
-        $hint.textContent = "No more hints.";
+        $hint.textContent = p.hints.length ? "No more hints." : "No hints available.";
       }
     }
 
@@ -271,6 +278,7 @@
       $num.textContent = `#${ix+1}/${PUZZLES.length}`;
       [$a1,$a2,$b1,$b2].forEach(el => el.value = "");
       $status.textContent = ""; $status.className = "status"; $hint.textContent = ""; $hint.dataset.n = "0"; penaltyMs = 0;
+      setNotice(availabilityNotice);
       disableUI(true);
       const img = new Image();
       img.onload = () => {
@@ -300,22 +308,113 @@
 
     function nextPuzzle() { loadPuzzleByIndex((ix + 1) % PUZZLES.length); }
 
+    function splitWords(text){
+      const cleaned = text.replace(/[^A-Za-z]/g, ' ');
+      const parts = cleaned.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+/g) || [];
+      return parts.map(word => word.toLowerCase());
+    }
+
+    function parsePuzzleFromFilename(filename){
+      const base = filename.replace(/\.[^.]+$/, '');
+      const match = base.match(/^(\d{1,2})([a-z]{3})(\d{4})_(.+)$/i);
+      if (!match) return null;
+      const [, dayRaw, monRaw, yearRaw, phraseRaw] = match;
+      const monthIndex = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(monRaw.toLowerCase());
+      if (monthIndex === -1) return null;
+      const date = new Date(Date.UTC(parseInt(yearRaw,10), monthIndex, parseInt(dayRaw,10)));
+      if (Number.isNaN(date.getTime())) return null;
+      const words = splitWords(phraseRaw);
+      if (words.length < 4) return null;
+      const answers = [
+        [words[0], words[1]],
+        [words[2], words[3]]
+      ];
+      return {
+        date,
+        dateKey: formatDateKey(date),
+        displayDate: formatShortMonth(date),
+        answers,
+        hints: [],
+        filename
+      };
+    }
+
+    function resolveRepository(){
+      const host = window.location.hostname;
+      const pathname = window.location.pathname.replace(/^\/+/, '');
+      const firstSegment = pathname.split('/')[0];
+      if (host.endsWith('github.io')) {
+        const owner = host.split('.')[0];
+        const repo = firstSegment ? firstSegment : `${owner}.github.io`;
+        return { owner, repo, branch: 'main' };
+      }
+      return null;
+    }
+
+    async function loadPuzzlesFromGithub(){
+      const repo = resolveRepository();
+      if (!repo) throw new Error('Unable to infer GitHub repository from URL.');
+      const apiUrl = `https://api.github.com/repos/${repo.owner}/${repo.repo}/contents/puzzles?ref=${repo.branch}`;
+      const res = await fetch(apiUrl, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error('Unexpected GitHub API response');
+      const imageFiles = data.filter(item => item.type === 'file' && /\.(png|jpe?g|bmp|gif|webp)$/i.test(item.name));
+      const parsed = imageFiles.map(item => parsePuzzleFromFilename(item.name))
+        .filter(Boolean)
+        .map(puzzle => ({
+          ...puzzle,
+          img: `./puzzles/${puzzle.filename}`
+        }));
+      if (parsed.length === 0) throw new Error('No valid puzzle images found');
+      return parsed.sort((a,b) => a.date - b.date);
+    }
+
+    function selectPuzzleForToday(puzzles){
+      const todayKey = formatDateKey(new Date());
+      const todayIndex = puzzles.findIndex(p => p.dateKey === todayKey);
+      if (todayIndex >= 0) {
+        availabilityNotice = "";
+        return todayIndex;
+      }
+      const prior = puzzles.filter(p => p.dateKey < todayKey);
+      if (prior.length > 0) {
+        const latest = prior[prior.length - 1];
+        availabilityNotice = `Sorry, today\u2019s image is unavailable, here is one from ${latest.displayDate}.`;
+        return puzzles.indexOf(latest);
+      }
+      const earliest = puzzles[0];
+      availabilityNotice = `Sorry, today\u2019s image is unavailable, here is one from ${earliest.displayDate}.`;
+      return 0;
+    }
+
+    function applyFallbackDates(puzzles){
+      const now = new Date();
+      const y = now.getUTCFullYear();
+      const m = now.getUTCMonth();
+      const d = now.getUTCDate();
+      return puzzles.map((p, index) => {
+        const date = new Date(Date.UTC(y, m, d - index));
+        return {
+          ...p,
+          date,
+          dateKey: formatDateKey(date),
+          displayDate: formatShortMonth(date)
+        };
+      });
+    }
+
     async function boot(){
       disableUI(true);
       setStatus("Loading today\'s puzzle…", "");
       try {
-        const res = await fetch('puzzles.json', { cache: 'no-store' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (!Array.isArray(data)) throw new Error('JSON root must be an array');
-        const cleaned = data.filter(isPuzzle);
-        if (cleaned.length === 0) throw new Error('No valid puzzles found');
-        PUZZLES = cleaned;
+        PUZZLES = await loadPuzzlesFromGithub();
       } catch (e){
-        console.warn('Using fallback puzzles because fetch failed:', e);
-        setStatus("Using fallback puzzles (add /puzzles.json to control daily puzzles).", "");
+        console.warn('Using fallback puzzles because GitHub load failed:', e);
+        setStatus("Using fallback puzzles (couldn’t load GitHub images).", "");
+        PUZZLES = applyFallbackDates(FALLBACK);
       }
-      const idx = selectDailyIndex(PUZZLES.length, new Date());
+      const idx = selectPuzzleForToday(PUZZLES);
       loadPuzzleByIndex(idx);
     }
 
