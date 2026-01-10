@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">\>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -351,6 +351,27 @@
       return null;
     }
 
+    function resolveImgPath(path){
+      if (!path) return path;
+      if (/^(https?:)?\/\//i.test(path) || path.startsWith('/') || path.startsWith('./') || path.startsWith('../')) {
+        return path;
+      }
+      return `./puzzles/${path}`;
+    }
+
+    async function loadPuzzlesFromJson(){
+      const res = await fetch('./puzzles.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`puzzles.json error: ${res.status}`);
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error('Unexpected puzzles.json response');
+      const parsed = data.filter(isPuzzle).map(puzzle => ({
+        ...puzzle,
+        img: resolveImgPath(puzzle.img)
+      }));
+      if (parsed.length === 0) throw new Error('No valid puzzles in puzzles.json');
+      return applyFallbackDates(parsed);
+    }
+
     async function loadPuzzlesFromGithub(){
       const repo = resolveRepository();
       if (!repo) throw new Error('Unable to infer GitHub repository from URL.');
@@ -408,11 +429,15 @@
       disableUI(true);
       setStatus("Loading today\'s puzzle…", "");
       try {
-        PUZZLES = await loadPuzzlesFromGithub();
+        PUZZLES = await loadPuzzlesFromJson();
       } catch (e){
-        console.warn('Using fallback puzzles because GitHub load failed:', e);
-        setStatus("Using fallback puzzles (couldn’t load GitHub images).", "");
-        PUZZLES = applyFallbackDates(FALLBACK);
+        try {
+          PUZZLES = await loadPuzzlesFromGithub();
+        } catch (err){
+          console.warn('Using fallback puzzles because GitHub load failed:', err);
+          setStatus("Using fallback puzzles (couldn’t load puzzle images).", "");
+          PUZZLES = applyFallbackDates(FALLBACK);
+        }
       }
       const idx = selectPuzzleForToday(PUZZLES);
       loadPuzzleByIndex(idx);
