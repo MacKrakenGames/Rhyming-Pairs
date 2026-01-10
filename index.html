@@ -57,6 +57,10 @@
     .small { color:var(--muted); font-size:.9rem; }
     .pill { display:inline-block; padding:3px 8px; border-radius:999px; background:#101537; border:1px solid #2a2f49; color:var(--muted); margin-left:6px; }
     .notice { margin-top:10px; color:#ffd36e; font-weight:600; }
+    .console { margin-top:12px; padding:10px 12px; border-radius:12px; border:1px solid #2a2f49; background:#0c1027; color:#ffd36e; font-size:.85rem; line-height:1.4; }
+    .console h2 { margin:0 0 6px; font-size:.9rem; color:#ffd36e; }
+    .console ul { margin:0; padding-left:18px; }
+    .console li { margin:2px 0; }
   </style>
 </head>
 <body>
@@ -90,6 +94,10 @@
 
       <div id="hint" class="hint"></div>
       <div id="status" class="status"></div>
+      <div id="errorConsole" class="console" hidden>
+        <h2>Load Errors</h2>
+        <ul id="errorList"></ul>
+      </div>
     </div>
 
     <div class="card small">
@@ -214,6 +222,8 @@
     const $hint = document.getElementById("hint");
     const $num = document.getElementById("puzzleNum");
     const $notice = document.getElementById("availabilityNotice");
+    const $errorConsole = document.getElementById("errorConsole");
+    const $errorList = document.getElementById("errorList");
     const $a1 = document.getElementById("pairA1");
     const $a2 = document.getElementById("pairA2");
     const $b1 = document.getElementById("pairB1");
@@ -224,6 +234,14 @@
 
     function setStatus(msg,cls){ $status.textContent = msg; $status.className = `status ${cls||''}`; }
     function setNotice(msg){ $notice.textContent = msg; }
+    function logError(msg){
+      if (!msg) return;
+      const item = document.createElement('li');
+      item.textContent = msg;
+      $errorList.appendChild(item);
+      $errorConsole.hidden = false;
+      console.warn(msg);
+    }
 
     function disableUI(disabled=true){
       [$a1,$a2,$b1,$b2,$check,$hintBtn,$skip].forEach(el=> el.disabled = disabled);
@@ -303,7 +321,8 @@
       img.onerror = () => { 
         const stage = document.querySelector('.imgbox');
         stage.style.height = 'auto';
-        setStatus("Image failed to load. Check the path in puzzles.json.", "bad"); 
+        setStatus("Image failed to load. Check the puzzle path.", "bad"); 
+        logError(`Image failed to load: ${p.img}`);
         disableUI(false); 
       };
       img.src = p.img;
@@ -367,7 +386,11 @@
       if (!res.ok) throw new Error(`puzzles.json error: ${res.status}`);
       const data = await res.json();
       if (!Array.isArray(data)) throw new Error('Unexpected puzzles.json response');
-      const parsed = data.filter(isPuzzle).map(puzzle => ({
+      const valid = data.filter(isPuzzle);
+      if (valid.length !== data.length) {
+        logError(`puzzles.json entries skipped: ${data.length - valid.length} invalid schema.`);
+      }
+      const parsed = valid.map(puzzle => ({
         ...puzzle,
         img: resolveImgPath(puzzle.img)
       }));
@@ -390,6 +413,9 @@
           ...puzzle,
           img: `./puzzles/${puzzle.filename}`
         }));
+      if (parsed.length !== imageFiles.length) {
+        logError(`Puzzle filenames skipped: ${imageFiles.length - parsed.length} did not match the date naming pattern.`);
+      }
       if (parsed.length === 0) throw new Error('No valid puzzle images found');
       return parsed.sort((a,b) => a.date - b.date);
     }
@@ -434,9 +460,11 @@
       try {
         PUZZLES = await loadPuzzlesFromGithub();
       } catch (e){
+        logError(`GitHub puzzles unavailable: ${e.message}`);
         try {
           PUZZLES = await loadPuzzlesFromJson();
         } catch (err){
+          logError(`Local puzzles.json unavailable: ${err.message}`);
           console.warn('Using fallback puzzles because puzzle data load failed:', err);
           setStatus("Using fallback puzzles (couldn’t load puzzle images).", "");
           PUZZLES = applyFallbackDates(FALLBACK);
