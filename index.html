@@ -32,6 +32,7 @@
                         linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%);
       background-size: 20px 20px; background-position: 0 0,10px 10px;
       border-radius:12px;
+      z-index:0;
     }
     .imgbox img { 
       max-width:100%;
@@ -39,6 +40,8 @@
       width:auto; height:auto;        /* natural size until constrained by the box */
       object-fit:contain;             /* no cropping; letterbox/pillarbox as needed */
       display:block;
+      position:relative;
+      z-index:1;
     }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
     @media (max-width:560px){ .row{ grid-template-columns:1fr; } }
@@ -429,12 +432,12 @@
       disableUI(true);
       setStatus("Loading today\'s puzzle…", "");
       try {
-        PUZZLES = await loadPuzzlesFromJson();
+        PUZZLES = await loadPuzzlesFromGithub();
       } catch (e){
         try {
-          PUZZLES = await loadPuzzlesFromGithub();
+          PUZZLES = await loadPuzzlesFromJson();
         } catch (err){
-          console.warn('Using fallback puzzles because GitHub load failed:', err);
+          console.warn('Using fallback puzzles because puzzle data load failed:', err);
           setStatus("Using fallback puzzles (couldn’t load puzzle images).", "");
           PUZZLES = applyFallbackDates(FALLBACK);
         }
