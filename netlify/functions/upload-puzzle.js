@@ -11,7 +11,8 @@ function buildFilePath(publishAt, filename) {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
   const d = String(date.getUTCDate()).padStart(2, "0");
-  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const rawName = typeof filename === "string" && filename ? filename : "puzzle.jpg";
+  const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, "_");
   return `${y}-${m}-${d}/${Date.now()}-${safeName}`;
 }
 
@@ -24,12 +25,14 @@ async function parseMultipart(event) {
       headers: event.headers
     });
 
-    busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
+    busboy.on("file", (fieldname, file, info, encoding, mimetype) => {
       const buffers = [];
+      const filename = typeof info === "string" ? info : info?.filename;
+      const fileType = typeof info === "string" ? mimetype : info?.mimeType;
       file.on("data", (data) => buffers.push(data));
       file.on("end", () => {
         fileBuffer = Buffer.concat(buffers);
-        fileInfo = { filename, mimetype };
+        fileInfo = { filename, mimetype: fileType };
       });
     });
 
