@@ -139,7 +139,13 @@
         return;
       }
       setStatus(authStatus, "Sending magic link...", "");
-      const { error } = await supabaseClient.auth.signInWithOtp({ email });
+      const emailRedirectTo = new URL("/admin.html", window.location.origin).toString();
+      const { error } = await supabaseClient.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo
+        }
+      });
       if (error) {
         setStatus(authStatus, error.message, "bad");
         return;
