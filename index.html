@@ -95,9 +95,9 @@
   </div>
 
   <script>
-    // --- Daily Puzzle from Filenames + Looser Answer Checking ---
-    // Loads /puzzles directory contents from GitHub, derives answers from filenames,
-    // and picks today's puzzle by UTC date (falls back to most recent earlier puzzle).
+    // --- Daily Puzzle from Supabase + Looser Answer Checking ---
+    // Loads puzzles from Supabase via Netlify Functions and picks today's puzzle
+    // by UTC date (falls back to most recent earlier puzzle).
     // Looser matching: word-order-insensitive (inside a phrase), plural-insensitive,
     // minor typos (Levenshtein <= 1), ignores hyphens/punctuation/case.
 
@@ -308,65 +308,29 @@
 
     function nextPuzzle() { loadPuzzleByIndex((ix + 1) % PUZZLES.length); }
 
-    function splitWords(text){
-      const cleaned = text.replace(/[^A-Za-z]/g, ' ');
-      const parts = cleaned.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+/g) || [];
-      return parts.map(word => word.toLowerCase());
+    async function loadConfig(){
+      const res = await fetch('/.netlify/functions/get-config');
+      if (!res.ok) throw new Error('Missing Supabase config.');
+      return res.json();
     }
 
-    function parsePuzzleFromFilename(filename){
-      const base = filename.replace(/\.[^.]+$/, '');
-      const match = base.match(/^(\d{1,2})([a-z]{3})(\d{4})_(.+)$/i);
-      if (!match) return null;
-      const [, dayRaw, monRaw, yearRaw, phraseRaw] = match;
-      const monthIndex = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(monRaw.toLowerCase());
-      if (monthIndex === -1) return null;
-      const date = new Date(Date.UTC(parseInt(yearRaw,10), monthIndex, parseInt(dayRaw,10)));
-      if (Number.isNaN(date.getTime())) return null;
-      const words = splitWords(phraseRaw);
-      if (words.length < 4) return null;
-      const answers = [
-        [words[0], words[1]],
-        [words[2], words[3]]
-      ];
-      return {
-        date,
-        dateKey: formatDateKey(date),
-        displayDate: formatShortMonth(date),
-        answers,
-        hints: [],
-        filename
-      };
-    }
-
-    function resolveRepository(){
-      const host = window.location.hostname;
-      const pathname = window.location.pathname.replace(/^\/+/, '');
-      const firstSegment = pathname.split('/')[0];
-      if (host.endsWith('github.io')) {
-        const owner = host.split('.')[0];
-        const repo = firstSegment ? firstSegment : `${owner}.github.io`;
-        return { owner, repo, branch: 'main' };
-      }
-      return null;
-    }
-
-    async function loadPuzzlesFromGithub(){
-      const repo = resolveRepository();
-      if (!repo) throw new Error('Unable to infer GitHub repository from URL.');
-      const apiUrl = `https://api.github.com/repos/${repo.owner}/${repo.repo}/contents/puzzles?ref=${repo.branch}`;
-      const res = await fetch(apiUrl, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
+    async function loadPuzzlesFromSupabase(){
+      const res = await fetch('/.netlify/functions/list-puzzles', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`Supabase load error: ${res.status}`);
       const data = await res.json();
-      if (!Array.isArray(data)) throw new Error('Unexpected GitHub API response');
-      const imageFiles = data.filter(item => item.type === 'file' && /\.(png|jpe?g|bmp|gif|webp)$/i.test(item.name));
-      const parsed = imageFiles.map(item => parsePuzzleFromFilename(item.name))
-        .filter(Boolean)
-        .map(puzzle => ({
-          ...puzzle,
-          img: `./puzzles/${puzzle.filename}`
-        }));
-      if (parsed.length === 0) throw new Error('No valid puzzle images found');
+      if (!data || !Array.isArray(data.puzzles)) throw new Error('Unexpected puzzles response');
+      const parsed = data.puzzles.map((puzzle) => {
+        const date = new Date(puzzle.publish_at);
+        return {
+          img: puzzle.img,
+          answers: puzzle.answers,
+          hints: puzzle.hints || [],
+          date,
+          dateKey: formatDateKey(date),
+          displayDate: formatShortMonth(date)
+        };
+      }).filter(p => !Number.isNaN(p.date.getTime()));
+      if (parsed.length === 0) throw new Error('No valid puzzles found');
       return parsed.sort((a,b) => a.date - b.date);
     }
 
@@ -408,10 +372,11 @@
       disableUI(true);
       setStatus("Loading today\'s puzzle…", "");
       try {
-        PUZZLES = await loadPuzzlesFromGithub();
+        await loadConfig();
+        PUZZLES = await loadPuzzlesFromSupabase();
       } catch (e){
-        console.warn('Using fallback puzzles because GitHub load failed:', e);
-        setStatus("Using fallback puzzles (couldn’t load GitHub images).", "");
+        console.warn('Using fallback puzzles because Supabase load failed:', e);
+        setStatus("Using fallback puzzles (couldn’t load Supabase puzzles).", "");
         PUZZLES = applyFallbackDates(FALLBACK);
       }
       const idx = selectPuzzleForToday(PUZZLES);

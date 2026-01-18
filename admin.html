@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Rhyming Pairs — Admin</title>
+  <style>
+    :root { --bg:#0f1221; --fg:#e9ecf1; --muted:#aab0c0; --accent:#7bd3ff; --ok:#78e08f; --bad:#ff7675; }
+    html,body { margin:0; height:100%; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg); color:var(--fg); }
+    .wrap { max-width:900px; margin:0 auto; padding:24px; }
+    h1 { font-size:1.25rem; margin:0 0 12px; color:var(--fg); }
+    .card { background:#151935; border:1px solid #2a2f49; border-radius:16px; padding:16px; margin-top:16px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    @media (max-width:560px){ .row{ grid-template-columns:1fr; } }
+    label { display:block; font-size:.9rem; color:var(--muted); margin-bottom:6px; }
+    input, textarea { width:100%; padding:10px 12px; border-radius:12px; border:1px solid #2a2f49; background:#0f1330; color:var(--fg); }
+    textarea { min-height:120px; resize:vertical; }
+    button { padding:10px 14px; border-radius:12px; border:1px solid #2a2f49; background:#1a1f44; color:var(--fg); cursor:pointer; }
+    button:hover { filter:brightness(1.1); }
+    .status { margin-top:10px; font-weight:600; }
+    .status.ok { color:var(--ok); }
+    .status.bad { color:var(--bad); }
+    .small { color:var(--muted); font-size:.9rem; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Rhyming Pairs Admin</h1>
+
+    <div class="card" id="authCard">
+      <p class="small">Use a magic link to sign in. You only need your email.</p>
+      <div class="row">
+        <div>
+          <label for="email">Admin email</label>
+          <input id="email" type="email" placeholder="you@example.com" />
+        </div>
+        <div class="actions" style="align-items:flex-end;">
+          <button id="sendLinkBtn" type="button">Send Magic Link</button>
+        </div>
+      </div>
+      <div id="authStatus" class="status"></div>
+    </div>
+
+    <div class="card" id="uploadCard" style="display:none;">
+      <h2>Upload a puzzle</h2>
+      <div class="row">
+        <div>
+          <label for="image">Puzzle image</label>
+          <input id="image" type="file" accept="image/*" />
+        </div>
+        <div>
+          <label for="publishAt">Publish date (UTC)</label>
+          <input id="publishAt" type="date" />
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div>
+          <label for="answer1a">Answer 1 — word A</label>
+          <input id="answer1a" type="text" placeholder="cracked" />
+        </div>
+        <div>
+          <label for="answer1b">Answer 1 — word B</label>
+          <input id="answer1b" type="text" placeholder="stones" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <div>
+          <label for="answer2a">Answer 2 — word A</label>
+          <input id="answer2a" type="text" placeholder="stacked" />
+        </div>
+        <div>
+          <label for="answer2b">Answer 2 — word B</label>
+          <input id="answer2b" type="text" placeholder="crones" />
+        </div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <label for="hints">Hints (one per line)</label>
+        <textarea id="hints" placeholder="Hint 1&#10;Hint 2"></textarea>
+      </div>
+
+      <div class="actions">
+        <button id="uploadBtn" type="button">Upload Puzzle</button>
+        <button id="logoutBtn" type="button">Log out</button>
+      </div>
+      <div id="uploadStatus" class="status"></div>
+    </div>
+  </div>
+
+  <script>
+    const authStatus = document.getElementById("authStatus");
+    const uploadStatus = document.getElementById("uploadStatus");
+    const uploadCard = document.getElementById("uploadCard");
+    const sendLinkBtn = document.getElementById("sendLinkBtn");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+
+    function setStatus(el, msg, cls) {
+      el.textContent = msg;
+      el.className = `status ${cls || ""}`;
+    }
+
+    async function loadConfig() {
+      const res = await fetch("/.netlify/functions/get-config");
+      if (!res.ok) throw new Error("Missing Supabase config.");
+      return res.json();
+    }
+
+    let supabaseClient;
+
+    function showUploadUI() {
+      uploadCard.style.display = "block";
+    }
+
+    async function init() {
+      try {
+        const { supabaseUrl, supabaseAnonKey } = await loadConfig();
+        supabaseClient = window.supabase.createClient(
+          supabaseUrl,
+          supabaseAnonKey
+        );
+        const { data } = await supabaseClient.auth.getSession();
+        if (data.session) {
+          showUploadUI();
+          setStatus(authStatus, "Authenticated.", "ok");
+        }
+      } catch (error) {
+        setStatus(authStatus, "Unable to load Supabase config.", "bad");
+      }
+    }
+
+    sendLinkBtn.addEventListener("click", async () => {
+      const email = document.getElementById("email").value.trim();
+      if (!email) {
+        setStatus(authStatus, "Enter an email to send a magic link.", "bad");
+        return;
+      }
+      setStatus(authStatus, "Sending magic link...", "");
+      const { error } = await supabaseClient.auth.signInWithOtp({ email });
+      if (error) {
+        setStatus(authStatus, error.message, "bad");
+        return;
+      }
+      setStatus(authStatus, "Check your email for the sign-in link.", "ok");
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+      await supabaseClient.auth.signOut();
+      uploadCard.style.display = "none";
+      setStatus(authStatus, "Signed out.", "");
+    });
+
+    uploadBtn.addEventListener("click", async () => {
+      setStatus(uploadStatus, "", "");
+      const image = document.getElementById("image").files[0];
+      const publishAt = document.getElementById("publishAt").value;
+      const answer1a = document.getElementById("answer1a").value.trim();
+      const answer1b = document.getElementById("answer1b").value.trim();
+      const answer2a = document.getElementById("answer2a").value.trim();
+      const answer2b = document.getElementById("answer2b").value.trim();
+      const hints = document.getElementById("hints").value.trim();
+
+      if (!image || !publishAt || !answer1a || !answer1b || !answer2a || !answer2b) {
+        setStatus(uploadStatus, "Please complete all required fields.", "bad");
+        return;
+      }
+
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        setStatus(uploadStatus, "You are not authenticated.", "bad");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("image", image);
+      formData.append("publish_at", `${publishAt}T00:00:00.000Z`);
+      formData.append("answer_1a", answer1a);
+      formData.append("answer_1b", answer1b);
+      formData.append("answer_2a", answer2a);
+      formData.append("answer_2b", answer2b);
+      if (hints) {
+        formData.append("hints", hints);
+      }
+
+      setStatus(uploadStatus, "Uploading...", "");
+      const res = await fetch("/.netlify/functions/upload-puzzle", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        setStatus(
+          uploadStatus,
+          errorData.error || "Upload failed.",
+          "bad"
+        );
+        return;
+      }
+
+      const response = await res.json();
+      setStatus(
+        uploadStatus,
+        `Uploaded! Image URL: ${response.image_url}`,
+        "ok"
+      );
+    });
+
+    init();
+  </script>
+</body>
+</html>
