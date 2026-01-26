@@ -15,6 +15,23 @@
     label { display:block; font-size:.9rem; color:var(--muted); margin-bottom:6px; }
     input, textarea { width:100%; padding:10px 12px; border-radius:12px; border:1px solid #2a2f49; background:#0f1330; color:var(--fg); }
     textarea { min-height:120px; resize:vertical; }
+    .answer-row { grid-template-columns:repeat(auto-fit, minmax(140px, 220px)); justify-content:flex-start; }
+    .answer-row input { max-width:220px; }
+    .preview { margin-top:10px; border:1px solid #2a2f49; border-radius:12px; overflow:hidden; background:#0a0d1f; min-height:140px; display:flex; align-items:center; justify-content:center; }
+    .preview img { max-width:100%; max-height:220px; display:block; }
+    .calendar { display:grid; grid-template-columns:repeat(7, 1fr); gap:8px; margin-top:12px; }
+    .calendar-day { padding:10px; border-radius:10px; border:1px solid #2a2f49; text-align:center; background:#101537; }
+    .calendar-day.is-empty { color:var(--muted); background:#0f1330; }
+    .calendar-day.is-scheduled { background:#1f2b55; border-color:#3d4f7f; color:#dbe6ff; font-weight:600; }
+    .calendar-day.is-today { outline:2px solid var(--accent); }
+    .calendar-header { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .calendar-header button { padding:6px 10px; }
+    .calendar-weekday { text-align:center; font-size:.8rem; color:var(--muted); }
+    .legend { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; }
+    .legend span { display:inline-flex; align-items:center; gap:6px; }
+    .legend i { width:12px; height:12px; border-radius:4px; display:inline-block; }
+    .legend .legend-scheduled { background:#1f2b55; border:1px solid #3d4f7f; }
+    .legend .legend-empty { background:#0f1330; border:1px solid #2a2f49; }
     button { padding:10px 14px; border-radius:12px; border:1px solid #2a2f49; background:#1a1f44; color:var(--fg); cursor:pointer; }
     button:hover { filter:brightness(1.1); }
     .status { margin-top:10px; font-weight:600; }
@@ -49,6 +66,9 @@
         <div>
           <label for="image">Puzzle image</label>
           <input id="image" type="file" accept="image/*" />
+          <div class="preview" aria-live="polite">
+            <img id="imagePreview" alt="Selected puzzle preview" />
+          </div>
         </div>
         <div>
           <label for="publishAt">Publish date (UTC)</label>
@@ -56,7 +76,7 @@
         </div>
       </div>
 
-      <div class="row" style="margin-top:12px;">
+      <div class="row answer-row" style="margin-top:12px;">
         <div>
           <label for="answer1a">Answer 1 — word A</label>
           <input id="answer1a" type="text" placeholder="cracked" />
@@ -66,7 +86,7 @@
           <input id="answer1b" type="text" placeholder="stones" />
         </div>
       </div>
-      <div class="row" style="margin-top:12px;">
+      <div class="row answer-row" style="margin-top:12px;">
         <div>
           <label for="answer2a">Answer 2 — word A</label>
           <input id="answer2a" type="text" placeholder="stacked" />
@@ -88,15 +108,44 @@
       </div>
       <div id="uploadStatus" class="status"></div>
     </div>
+
+    <div class="card" id="scheduleCard" style="display:none;">
+      <div class="calendar-header">
+        <h2 style="margin:0;">Puzzle calendar</h2>
+        <div class="actions" style="margin-top:0;">
+          <button id="prevMonthBtn" type="button" aria-label="Previous month">Prev</button>
+          <button id="nextMonthBtn" type="button" aria-label="Next month">Next</button>
+        </div>
+      </div>
+      <div id="calendarLabel" class="small" style="margin-top:6px;"></div>
+      <div class="calendar" id="calendarGrid"></div>
+      <div class="legend small">
+        <span><i class="legend-scheduled"></i>Scheduled</span>
+        <span><i class="legend-empty"></i>Open</span>
+      </div>
+    </div>
   </div>
 
   <script>
     const authStatus = document.getElementById("authStatus");
     const uploadStatus = document.getElementById("uploadStatus");
     const uploadCard = document.getElementById("uploadCard");
+    const scheduleCard = document.getElementById("scheduleCard");
     const sendLinkBtn = document.getElementById("sendLinkBtn");
     const uploadBtn = document.getElementById("uploadBtn");
     const logoutBtn = document.getElementById("logoutBtn");
+    const imageInput = document.getElementById("image");
+    const imagePreview = document.getElementById("imagePreview");
+    const calendarGrid = document.getElementById("calendarGrid");
+    const calendarLabel = document.getElementById("calendarLabel");
+    const prevMonthBtn = document.getElementById("prevMonthBtn");
+    const nextMonthBtn = document.getElementById("nextMonthBtn");
+
+    let previewUrl = "";
+    let scheduledDates = new Set();
+    let currentMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+
+    const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     function setStatus(el, msg, cls) {
       el.textContent = msg;
@@ -113,6 +162,73 @@
 
     function showUploadUI() {
       uploadCard.style.display = "block";
+      scheduleCard.style.display = "block";
+    }
+
+    function formatDateKey(date) {
+      const y = date.getUTCFullYear();
+      const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(date.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function renderCalendar() {
+      calendarGrid.innerHTML = "";
+      const year = currentMonth.getUTCFullYear();
+      const month = currentMonth.getUTCMonth();
+      calendarLabel.textContent = currentMonth.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC"
+      });
+
+      weekdayLabels.forEach((label) => {
+        const cell = document.createElement("div");
+        cell.textContent = label;
+        cell.className = "calendar-weekday";
+        calendarGrid.appendChild(cell);
+      });
+
+      const firstDay = new Date(Date.UTC(year, month, 1));
+      const startOffset = firstDay.getUTCDay();
+      const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      const todayKey = formatDateKey(new Date());
+
+      for (let i = 0; i < startOffset; i++) {
+        const empty = document.createElement("div");
+        empty.className = "calendar-day is-empty";
+        calendarGrid.appendChild(empty);
+      }
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(Date.UTC(year, month, day));
+        const key = formatDateKey(date);
+        const cell = document.createElement("div");
+        const isScheduled = scheduledDates.has(key);
+        cell.textContent = day;
+        cell.className = `calendar-day ${isScheduled ? "is-scheduled" : "is-empty"}`;
+        if (key === todayKey) {
+          cell.classList.add("is-today");
+        }
+        calendarGrid.appendChild(cell);
+      }
+    }
+
+    async function loadSchedule() {
+      try {
+        const res = await fetch("/.netlify/functions/list-puzzles", { cache: "no-store" });
+        if (!res.ok) throw new Error("Unable to load puzzles");
+        const data = await res.json();
+        scheduledDates = new Set(
+          (data.puzzles || [])
+            .map((puzzle) => puzzle.publish_at)
+            .filter(Boolean)
+            .map((dateString) => formatDateKey(new Date(dateString)))
+        );
+        renderCalendar();
+      } catch (error) {
+        calendarLabel.textContent = "Unable to load scheduled dates.";
+      }
     }
 
     async function init() {
@@ -126,6 +242,7 @@
         if (data.session) {
           showUploadUI();
           setStatus(authStatus, "Authenticated.", "ok");
+          await loadSchedule();
         }
       } catch (error) {
         setStatus(authStatus, "Unable to load Supabase config.", "bad");
@@ -156,7 +273,29 @@
     logoutBtn.addEventListener("click", async () => {
       await supabaseClient.auth.signOut();
       uploadCard.style.display = "none";
+      scheduleCard.style.display = "none";
       setStatus(authStatus, "Signed out.", "");
+    });
+
+    imageInput.addEventListener("change", () => {
+      const file = imageInput.files[0];
+      if (!file) {
+        imagePreview.removeAttribute("src");
+        return;
+      }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(file);
+      imagePreview.src = previewUrl;
+    });
+
+    prevMonthBtn.addEventListener("click", () => {
+      currentMonth = new Date(Date.UTC(currentMonth.getUTCFullYear(), currentMonth.getUTCMonth() - 1, 1));
+      renderCalendar();
+    });
+
+    nextMonthBtn.addEventListener("click", () => {
+      currentMonth = new Date(Date.UTC(currentMonth.getUTCFullYear(), currentMonth.getUTCMonth() + 1, 1));
+      renderCalendar();
     });
 
     uploadBtn.addEventListener("click", async () => {
@@ -217,6 +356,7 @@
         `Uploaded! Image URL: ${response.image_url}`,
         "ok"
       );
+      await loadSchedule();
     });
 
     init();
