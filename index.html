@@ -6,7 +6,7 @@
   <title>Rhyming Pairs — MVP</title>
   <style>
     :root { --bg:#0f1221; --fg:#e9ecf1; --muted:#aab0c0; --accent:#7bd3ff; --ok:#78e08f; --bad:#ff7675; }
-    html,body { margin:0; height:100%; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg); color:var(--fg); }
+    html,body { margin:0; height:100%; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg) url("art/background.png") center/cover no-repeat fixed; color:var(--fg); }
     .wrap { max-width:900px; margin:0 auto; padding:24px; }
     header { display:flex; justify-content:space-between; align-items:center; gap:16px; }
     h1 { font-size:1.25rem; margin:0; color:var(--fg); }
@@ -32,6 +32,7 @@
                         linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%);
       background-size: 20px 20px; background-position: 0 0,10px 10px;
       border-radius:12px;
+      z-index:0;
     }
     .imgbox img { 
       max-width:100%;
@@ -39,6 +40,8 @@
       width:auto; height:auto;        /* natural size until constrained by the box */
       object-fit:contain;             /* no cropping; letterbox/pillarbox as needed */
       display:block;
+      position:relative;
+      z-index:1;
     }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
     @media (max-width:560px){ .row{ grid-template-columns:1fr; } }

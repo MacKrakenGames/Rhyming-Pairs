@@ -19,7 +19,6 @@ exports.handler = async () => {
     .select(
       "id,image_path,answer_1a,answer_1b,answer_2a,answer_2b,hints,publish_at"
     )
-    .lte("publish_at", new Date().toISOString())
     .order("publish_at", { ascending: true });
 
   if (error) {
