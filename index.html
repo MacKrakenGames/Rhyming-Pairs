@@ -52,23 +52,20 @@
       z-index:0;
     }
     .imgbox img { 
-      max-width:100%;
-      max-height:100%;
-      width:auto; height:auto;        /* natural size until constrained by the box */
-      object-fit:contain;             /* no cropping; letterbox/pillarbox as needed */
-      display:block;
-      position:relative;
-      z-index:1;
-    }
-    .puzzle-overlay {
-      position:absolute;
-      inset:0;
       width:100%;
       height:100%;
-      object-fit:cover;
+      object-fit:contain;             /* no cropping; letterbox/pillarbox as needed */
+      display:block;
+      position:absolute;
+      inset:0;
+    }
+    .puzzle-image { z-index:1; }
+    .puzzle-overlay {
+      object-fit:contain;
       z-index:2;
     }
-    .puzzle-overlay.is-hidden { display:none; }
+    .imgbox.is-revealed .puzzle-image { z-index:2; }
+    .imgbox.is-revealed .puzzle-overlay { z-index:1; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
     @media (max-width:560px){ .row{ grid-template-columns:1fr; } }
     input[type="text"] { width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--field); color:var(--fg); font-family:"Fredoka One", system-ui, sans-serif; }
@@ -108,7 +105,7 @@
 
     <div class="card">
       <div class="imgbox">
-        <img id="puzzleImg" alt="Puzzle image" />
+        <img id="puzzleImg" class="puzzle-image" alt="Puzzle image" />
         <img id="puzzleOverlay" class="puzzle-overlay" src="art/overlay.png" alt="Puzzle hidden" />
       </div>
       <div id="availabilityNotice" class="notice" role="status" aria-live="polite"></div>
@@ -348,7 +345,7 @@
     const $status = document.getElementById("status");
     const $num = document.getElementById("puzzleNum");
     const $notice = document.getElementById("availabilityNotice");
-    const $overlay = document.getElementById("puzzleOverlay");
+    const $stage = document.querySelector(".imgbox");
     const $displayBtn = document.getElementById("displayPuzzleBtn");
     const $a1 = document.getElementById("pairA1");
     const $a2 = document.getElementById("pairA2");
@@ -370,11 +367,11 @@
 
     function updateRevealState() {
       if (isPuzzleRevealed) {
-        $overlay.classList.add("is-hidden");
+        $stage.classList.add("is-revealed");
         $displayBtn.disabled = true;
         $displayBtn.textContent = "Puzzle Displayed";
       } else {
-        $overlay.classList.remove("is-hidden");
+        $stage.classList.remove("is-revealed");
         $displayBtn.disabled = !isPuzzleLoaded;
         $displayBtn.textContent = "Display Puzzle";
       }
@@ -632,3 +629,4 @@
   </script>
 </body>
 </html>
+    const $stage = document.querySelector(".imgbox");
