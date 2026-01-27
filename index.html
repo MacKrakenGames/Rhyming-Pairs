@@ -27,7 +27,7 @@
     header { display:flex; justify-content:space-between; align-items:center; gap:16px; }
     h1 { font-size:1.25rem; margin:0; color:var(--fg); }
     .header-actions { display:flex; align-items:center; gap:10px; }
-    .timer { font-variant-numeric:tabular-nums; padding:8px 12px; border:1px solid var(--border); border-radius:10px; color:var(--accent); }
+    .timer { font-variant-numeric:tabular-nums; padding:8px 12px; border:1px solid var(--border); border-radius:10px; color:#0b2a1a; }
     .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; margin-top:16px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
     /* Responsive image stage that adapts to any aspect ratio */
     .imgbox { 
@@ -60,6 +60,15 @@
       position:relative;
       z-index:1;
     }
+    .puzzle-overlay {
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      z-index:2;
+    }
+    .puzzle-overlay.is-hidden { display:none; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
     @media (max-width:560px){ .row{ grid-template-columns:1fr; } }
     input[type="text"] { width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--field); color:var(--fg); font-family:"Fredoka One", system-ui, sans-serif; }
@@ -100,8 +109,14 @@
     <div class="card">
       <div class="imgbox">
         <img id="puzzleImg" alt="Puzzle image" />
+        <img id="puzzleOverlay" class="puzzle-overlay" src="art/overlay.png" alt="Puzzle hidden" />
       </div>
       <div id="availabilityNotice" class="notice" role="status" aria-live="polite"></div>
+
+      <div class="actions">
+        <button id="displayPuzzleBtn" type="button">Display Puzzle</button>
+        <span class="small">Reveal the image to start your timer.</span>
+      </div>
 
       <div class="row">
         <input id="pairA1" class="answer-input" type="text" placeholder="first phrase — word 1 (e.g., cracked)" autocomplete="off" />
@@ -333,6 +348,8 @@
     const $status = document.getElementById("status");
     const $num = document.getElementById("puzzleNum");
     const $notice = document.getElementById("availabilityNotice");
+    const $overlay = document.getElementById("puzzleOverlay");
+    const $displayBtn = document.getElementById("displayPuzzleBtn");
     const $a1 = document.getElementById("pairA1");
     const $a2 = document.getElementById("pairA2");
     const $b1 = document.getElementById("pairB1");
@@ -341,11 +358,26 @@
     const $wordCheck = document.getElementById("wordCheckBtn");
     const $skip = document.getElementById("skipBtn");
 
+    let isPuzzleLoaded = false;
+    let isPuzzleRevealed = false;
+
     function setStatus(msg,cls){ $status.textContent = msg; $status.className = `status ${cls||''}`; }
     function setNotice(msg){ $notice.textContent = msg; }
 
     function disableUI(disabled=true){
       [$a1,$a2,$b1,$b2,$check,$wordCheck,$skip].forEach(el=> el.disabled = disabled);
+    }
+
+    function updateRevealState() {
+      if (isPuzzleRevealed) {
+        $overlay.classList.add("is-hidden");
+        $displayBtn.disabled = true;
+        $displayBtn.textContent = "Puzzle Displayed";
+      } else {
+        $overlay.classList.remove("is-hidden");
+        $displayBtn.disabled = !isPuzzleLoaded;
+        $displayBtn.textContent = "Display Puzzle";
+      }
     }
 
     function startTimer() {
@@ -401,6 +433,12 @@
       $num.textContent = `#${ix+1}/${PUZZLES.length}`;
       [$a1,$a2,$b1,$b2].forEach(el => el.value = "");
       $status.textContent = ""; $status.className = "status"; penaltyMs = 0;
+      elapsedMs = 0;
+      stopTimer();
+      $timer.textContent = formatMs(elapsedMs);
+      isPuzzleLoaded = false;
+      isPuzzleRevealed = false;
+      updateRevealState();
       applyMatchClasses([]);
       setNotice(availabilityNotice);
       disableUI(true);
@@ -417,14 +455,20 @@
         if (targetH > maxH) targetH = maxH;    // constrain overly tall images
         stage.style.height = targetH + 'px';
         $img.src = p.img; 
-        disableUI(false); 
-        $a1.focus(); 
-        startTimer(); 
+        isPuzzleLoaded = true;
+        updateRevealState();
+        if (isPuzzleRevealed) {
+          disableUI(false);
+          $a1.focus();
+          startTimer();
+        }
       };
       img.onerror = () => { 
         const stage = document.querySelector('.imgbox');
         stage.style.height = 'auto';
         setStatus("Image failed to load. Check the path in puzzles.json.", "bad"); 
+        isPuzzleLoaded = false;
+        updateRevealState();
         disableUI(false); 
       };
       img.src = p.img;
@@ -549,6 +593,15 @@
     tutorialCloseBtn.addEventListener("click", closeTutorial);
     tutorialModal.addEventListener("click", (event) => {
       if (event.target === tutorialModal) closeTutorial();
+    });
+
+    $displayBtn.addEventListener("click", () => {
+      if (!isPuzzleLoaded) return;
+      isPuzzleRevealed = true;
+      updateRevealState();
+      disableUI(false);
+      $a1.focus();
+      startTimer();
     });
 
     // Events
