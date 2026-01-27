@@ -64,7 +64,7 @@
     input[type="text"] { width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--field); color:var(--fg); font-family:"Fredoka One", system-ui, sans-serif; }
     input::placeholder { color:var(--muted); }
     .actions { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
-    button { padding:10px 14px; border-radius:12px; border:1px solid var(--border); background:var(--button); color:var(--fg); cursor:pointer; }
+    button { padding:10px 14px; border-radius:12px; border:1px solid var(--border); background:var(--button); color:var(--fg); cursor:pointer; font-family:"Fredoka One", system-ui, sans-serif; }
     button:hover { filter:brightness(1.1); }
     .status { margin-top:8px; font-weight:600; }
     .status.ok { color:var(--ok); }
@@ -247,6 +247,31 @@
       return { statuses, score };
     }
 
+    function expandTargetArrangements(answers){
+      const [phraseA, phraseB] = answers;
+      const variants = [];
+      const orders = [
+        [phraseA, phraseB],
+        [phraseB, phraseA]
+      ];
+      orders.forEach(([first, second]) => {
+        const firstOrders = [
+          [first[0], first[1]],
+          [first[1], first[0]]
+        ];
+        const secondOrders = [
+          [second[0], second[1]],
+          [second[1], second[0]]
+        ];
+        firstOrders.forEach((firstPhrase) => {
+          secondOrders.forEach((secondPhrase) => {
+            variants.push([firstPhrase, secondPhrase]);
+          });
+        });
+      });
+      return variants;
+    }
+
     // Two-word phrase equality, order-insensitive within the phrase
     function phraseEqual(typed, target){
       const [ta,tb] = typed; const [ua,ub] = target;
@@ -314,9 +339,10 @@
 
     function checkWords() {
       const p = PUZZLES[ix];
-      const direct = evaluateArrangement(p.answers);
-      const swapped = evaluateArrangement([p.answers[1], p.answers[0]]);
-      const best = swapped.score > direct.score ? swapped : direct;
+      const candidates = expandTargetArrangements(p.answers).map((target) => evaluateArrangement(target));
+      const best = candidates.reduce((currentBest, candidate) => (
+        candidate.score > currentBest.score ? candidate : currentBest
+      ), candidates[0]);
       applyMatchClasses(best.statuses);
       penaltyMs += 60000;
       elapsedMs = performance.now() - startTs + penaltyMs;
