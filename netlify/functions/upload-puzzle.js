@@ -78,6 +78,14 @@ exports.handler = async (event) => {
   if (authError || !authData?.user) {
     return { statusCode: 401, body: JSON.stringify({ error: "Unauthorized" }) };
   }
+  const adminAllowlist = (process.env.ADMIN_EMAIL_ALLOWLIST || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  const userEmail = authData.user.email?.toLowerCase();
+  if (!userEmail || !adminAllowlist.includes(userEmail)) {
+    return { statusCode: 403, body: JSON.stringify({ error: "Forbidden" }) };
+  }
 
   let parsed;
   try {
