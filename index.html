@@ -4,21 +4,37 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Rhyming Pairs — MVP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet" />
   <style>
-    :root { --bg:#0f1221; --fg:#e9ecf1; --muted:#aab0c0; --accent:#7bd3ff; --ok:#78e08f; --bad:#ff7675; }
-    html,body { margin:0; height:100%; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg) url("art/background.png") center/cover no-repeat fixed; color:var(--fg); }
+    :root {
+      --bg:#0a1a12;
+      --fg:#eef8f1;
+      --muted:#b9d7c5;
+      --accent:#7de0a2;
+      --ok:#62d38a;
+      --warn:#e7d36a;
+      --bad:#ff8f8f;
+      --panel:#10261c;
+      --border:#1f3a2a;
+      --field:#0e2118;
+      --button:#173726;
+      --pill:#0f2a1d;
+    }
+    html,body { margin:0; height:100%; font-family:"Fredoka One", system-ui, sans-serif; background:var(--bg) url("art/background.png") center/cover no-repeat fixed; color:var(--fg); }
     .wrap { max-width:900px; margin:0 auto; padding:24px; }
     header { display:flex; justify-content:space-between; align-items:center; gap:16px; }
     h1 { font-size:1.25rem; margin:0; color:var(--fg); }
-    .timer { font-variant-numeric:tabular-nums; padding:8px 12px; border:1px solid #2a2f49; border-radius:10px; color:var(--accent); }
-    .card { background:#151935; border:1px solid #2a2f49; border-radius:16px; padding:16px; margin-top:16px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+    .timer { font-variant-numeric:tabular-nums; padding:8px 12px; border:1px solid var(--border); border-radius:10px; color:var(--accent); }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; margin-top:16px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
     /* Responsive image stage that adapts to any aspect ratio */
     .imgbox { 
       width:100%;
       min-height:220px;               /* keeps a nice stage on narrow screens */
       max-height:70vh;                /* never exceed 70% of viewport height */
-      background:#0a0d1f; 
-      border:1px dashed #2a2f49; 
+      background:#0c1d14; 
+      border:1px dashed var(--border); 
       border-radius:12px; 
       display:flex; 
       align-items:center; 
@@ -45,18 +61,20 @@
     }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
     @media (max-width:560px){ .row{ grid-template-columns:1fr; } }
-    input[type="text"] { width:100%; padding:12px 14px; border-radius:12px; border:1px solid #2a2f49; background:#0f1330; color:var(--fg); }
+    input[type="text"] { width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--field); color:var(--fg); font-family:"Fredoka One", system-ui, sans-serif; }
     input::placeholder { color:var(--muted); }
     .actions { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
-    button { padding:10px 14px; border-radius:12px; border:1px solid #2a2f49; background:#1a1f44; color:var(--fg); cursor:pointer; }
+    button { padding:10px 14px; border-radius:12px; border:1px solid var(--border); background:var(--button); color:var(--fg); cursor:pointer; font-family:"Fredoka One", system-ui, sans-serif; }
     button:hover { filter:brightness(1.1); }
-    .hint { color:var(--muted); margin-top:8px; min-height:1.4em; }
     .status { margin-top:8px; font-weight:600; }
     .status.ok { color:var(--ok); }
     .status.bad { color:var(--bad); }
     .small { color:var(--muted); font-size:.9rem; }
-    .pill { display:inline-block; padding:3px 8px; border-radius:999px; background:#101537; border:1px solid #2a2f49; color:var(--muted); margin-left:6px; }
-    .notice { margin-top:10px; color:#ffd36e; font-weight:600; }
+    .pill { display:inline-block; padding:3px 8px; border-radius:999px; background:var(--pill); border:1px solid var(--border); color:var(--muted); margin-left:6px; }
+    .notice { margin-top:10px; color:var(--warn); font-weight:600; }
+    .answer-input.match-ok { border-color:var(--ok); box-shadow:0 0 0 2px rgba(98,211,138,0.25); background:#123220; }
+    .answer-input.match-root { border-color:var(--warn); box-shadow:0 0 0 2px rgba(231,211,106,0.25); background:#2a2a14; }
+    .answer-input.match-bad { border-color:var(--bad); box-shadow:0 0 0 2px rgba(255,143,143,0.2); background:#2a1515; }
   </style>
 </head>
 <body>
@@ -73,22 +91,21 @@
       <div id="availabilityNotice" class="notice" role="status" aria-live="polite"></div>
 
       <div class="row">
-        <input id="pairA1" type="text" placeholder="first phrase — word 1 (e.g., cracked)" autocomplete="off" />
-        <input id="pairA2" type="text" placeholder="first phrase — word 2 (e.g., stones)" autocomplete="off" />
+        <input id="pairA1" class="answer-input" type="text" placeholder="first phrase — word 1 (e.g., cracked)" autocomplete="off" />
+        <input id="pairA2" class="answer-input" type="text" placeholder="first phrase — word 2 (e.g., stones)" autocomplete="off" />
       </div>
       <div class="row">
-        <input id="pairB1" type="text" placeholder="second phrase — word 1 (e.g., stacked)" autocomplete="off" />
-        <input id="pairB2" type="text" placeholder="second phrase — word 2 (e.g., crones)" autocomplete="off" />
+        <input id="pairB1" class="answer-input" type="text" placeholder="second phrase — word 1 (e.g., stacked)" autocomplete="off" />
+        <input id="pairB2" class="answer-input" type="text" placeholder="second phrase — word 2 (e.g., crones)" autocomplete="off" />
       </div>
 
       <div class="actions">
         <button id="checkBtn">Check Answer</button>
-        <button id="hintBtn">Hint</button>
+        <button id="wordCheckBtn">Check Words (+60s)</button>
         <button id="skipBtn">Next Puzzle</button>
-        <span class="small">Hints add +10s to your time.</span>
+        <span class="small">Checking words adds +60s to your time.</span>
       </div>
 
-      <div id="hint" class="hint"></div>
       <div id="status" class="status"></div>
     </div>
 
@@ -197,6 +214,64 @@
       return false;
     }
 
+    function matchStatus(typed, target){
+      const nTyped = normalize(typed);
+      const nTarget = normalize(target);
+      if (!nTyped) return "match-bad";
+      if (nTyped === nTarget) return "match-ok";
+      const sTyped = stem(nTyped);
+      const sTarget = stem(nTarget);
+      if (sTyped && sTyped === sTarget) return "match-root";
+      return "match-bad";
+    }
+
+    function applyMatchClasses(statuses){
+      const inputs = [$a1, $a2, $b1, $b2];
+      inputs.forEach((input, index) => {
+        input.classList.remove("match-ok", "match-root", "match-bad");
+        if (statuses[index]) {
+          input.classList.add(statuses[index]);
+        }
+      });
+    }
+
+    function evaluateArrangement(targetAnswers){
+      const inputs = [$a1.value, $a2.value, $b1.value, $b2.value];
+      const targets = [targetAnswers[0][0], targetAnswers[0][1], targetAnswers[1][0], targetAnswers[1][1]];
+      const statuses = inputs.map((value, idx) => matchStatus(value, targets[idx]));
+      const score = statuses.reduce((total, status) => {
+        if (status === "match-ok") return total + 2;
+        if (status === "match-root") return total + 1;
+        return total;
+      }, 0);
+      return { statuses, score };
+    }
+
+    function expandTargetArrangements(answers){
+      const [phraseA, phraseB] = answers;
+      const variants = [];
+      const orders = [
+        [phraseA, phraseB],
+        [phraseB, phraseA]
+      ];
+      orders.forEach(([first, second]) => {
+        const firstOrders = [
+          [first[0], first[1]],
+          [first[1], first[0]]
+        ];
+        const secondOrders = [
+          [second[0], second[1]],
+          [second[1], second[0]]
+        ];
+        firstOrders.forEach((firstPhrase) => {
+          secondOrders.forEach((secondPhrase) => {
+            variants.push([firstPhrase, secondPhrase]);
+          });
+        });
+      });
+      return variants;
+    }
+
     // Two-word phrase equality, order-insensitive within the phrase
     function phraseEqual(typed, target){
       const [ta,tb] = typed; const [ua,ub] = target;
@@ -211,7 +286,6 @@
     const $img = document.getElementById("puzzleImg");
     const $timer = document.getElementById("timer");
     const $status = document.getElementById("status");
-    const $hint = document.getElementById("hint");
     const $num = document.getElementById("puzzleNum");
     const $notice = document.getElementById("availabilityNotice");
     const $a1 = document.getElementById("pairA1");
@@ -219,14 +293,14 @@
     const $b1 = document.getElementById("pairB1");
     const $b2 = document.getElementById("pairB2");
     const $check = document.getElementById("checkBtn");
-    const $hintBtn = document.getElementById("hintBtn");
+    const $wordCheck = document.getElementById("wordCheckBtn");
     const $skip = document.getElementById("skipBtn");
 
     function setStatus(msg,cls){ $status.textContent = msg; $status.className = `status ${cls||''}`; }
     function setNotice(msg){ $notice.textContent = msg; }
 
     function disableUI(disabled=true){
-      [$a1,$a2,$b1,$b2,$check,$hintBtn,$skip].forEach(el=> el.disabled = disabled);
+      [$a1,$a2,$b1,$b2,$check,$wordCheck,$skip].forEach(el=> el.disabled = disabled);
     }
 
     function startTimer() {
@@ -263,16 +337,17 @@
       else { setStatus("Not quite—keep trying!", "bad"); }
     }
 
-    function useHint() {
+    function checkWords() {
       const p = PUZZLES[ix];
-      const shown = $hint.dataset.n ? parseInt($hint.dataset.n,10) : 0;
-      if (shown < p.hints.length) {
-        $hint.textContent = p.hints.slice(0, shown+1).join("  •  ");
-        $hint.dataset.n = String(shown+1);
-        penaltyMs += 10000; // +10s per hint
-      } else {
-        $hint.textContent = p.hints.length ? "No more hints." : "No hints available.";
-      }
+      const candidates = expandTargetArrangements(p.answers).map((target) => evaluateArrangement(target));
+      const best = candidates.reduce((currentBest, candidate) => (
+        candidate.score > currentBest.score ? candidate : currentBest
+      ), candidates[0]);
+      applyMatchClasses(best.statuses);
+      penaltyMs += 60000;
+      elapsedMs = performance.now() - startTs + penaltyMs;
+      $timer.textContent = formatMs(elapsedMs);
+      setStatus("Word check applied (+60s).", "");
     }
 
     function loadPuzzleByIndex(index){
@@ -280,7 +355,8 @@
       const p = PUZZLES[ix];
       $num.textContent = `#${ix+1}/${PUZZLES.length}`;
       [$a1,$a2,$b1,$b2].forEach(el => el.value = "");
-      $status.textContent = ""; $status.className = "status"; $hint.textContent = ""; $hint.dataset.n = "0"; penaltyMs = 0;
+      $status.textContent = ""; $status.className = "status"; penaltyMs = 0;
+      applyMatchClasses([]);
       setNotice(availabilityNotice);
       disableUI(true);
       const img = new Image();
@@ -347,11 +423,11 @@
       const prior = puzzles.filter(p => p.dateKey < todayKey);
       if (prior.length > 0) {
         const latest = prior[prior.length - 1];
-        availabilityNotice = `Sorry, today\u2019s image is unavailable, here is one from ${latest.displayDate}.`;
+        availabilityNotice = "Sorry, today\u2019s image is unavailable, here is the most recent puzzle.";
         return puzzles.indexOf(latest);
       }
       const earliest = puzzles[0];
-      availabilityNotice = `Sorry, today\u2019s image is unavailable, here is one from ${earliest.displayDate}.`;
+      availabilityNotice = "Sorry, today\u2019s image is unavailable, here is the most recent puzzle.";
       return 0;
     }
 
@@ -388,7 +464,7 @@
 
     // Events
     $check.addEventListener("click", checkAnswer);
-    $hintBtn.addEventListener("click", useHint);
+    $wordCheck.addEventListener("click", checkWords);
     $skip.addEventListener("click", nextPuzzle);
     [$a1,$a2,$b1,$b2].forEach(el => el.addEventListener("keydown", e => { if (e.key === "Enter") checkAnswer(); }));
 
