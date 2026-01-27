@@ -31,10 +31,11 @@
     .preview { margin-top:10px; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:#0c1d14; min-height:140px; display:flex; align-items:center; justify-content:center; }
     .preview img { max-width:100%; max-height:220px; display:block; }
     .calendar { display:grid; grid-template-columns:repeat(7, 1fr); gap:8px; margin-top:12px; }
-    .calendar-day { padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center; background:#123323; }
+    .calendar-day { padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center; background:#123323; cursor:pointer; user-select:none; }
     .calendar-day.is-empty { color:var(--muted); background:var(--field); }
     .calendar-day.is-scheduled { background:#204233; border-color:#2f5a43; color:#dff6e8; font-weight:600; }
     .calendar-day.is-today { outline:2px solid var(--accent); }
+    .calendar-day.is-selected { box-shadow:0 0 0 2px rgba(125,224,162,0.45); }
     .calendar-header { display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .calendar-header button { padding:6px 10px; }
     .calendar-weekday { text-align:center; font-size:.8rem; color:var(--muted); }
@@ -50,6 +51,7 @@
     .status.bad { color:var(--bad); }
     .small { color:var(--muted); font-size:.9rem; }
     .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    .calendar-actions { margin-top:12px; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -134,6 +136,13 @@
         <span><i class="legend-scheduled"></i>Scheduled</span>
         <span><i class="legend-empty"></i>Open</span>
       </div>
+      <div class="calendar-actions">
+        <div id="selectedDateLabel" class="small">Select a date to set a publish date or manage scheduled puzzles.</div>
+        <div id="scheduledActions" class="actions" style="display:none;">
+          <button id="replaceBtn" type="button">Replace puzzle</button>
+          <button id="removeBtn" type="button">Remove puzzle</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -147,14 +156,23 @@
     const logoutBtn = document.getElementById("logoutBtn");
     const imageInput = document.getElementById("image");
     const imagePreview = document.getElementById("imagePreview");
+    const publishAtInput = document.getElementById("publishAt");
     const calendarGrid = document.getElementById("calendarGrid");
     const calendarLabel = document.getElementById("calendarLabel");
     const prevMonthBtn = document.getElementById("prevMonthBtn");
     const nextMonthBtn = document.getElementById("nextMonthBtn");
+    const selectedDateLabel = document.getElementById("selectedDateLabel");
+    const scheduledActions = document.getElementById("scheduledActions");
+    const replaceBtn = document.getElementById("replaceBtn");
+    const removeBtn = document.getElementById("removeBtn");
 
     let previewUrl = "";
     let scheduledDates = new Set();
+    let scheduledPuzzles = new Map();
     let currentMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+    let selectedDateKey = "";
+    let replaceTargetId = null;
+    let replaceTargetKey = "";
 
     const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -181,6 +199,37 @@
       const m = String(date.getUTCMonth() + 1).padStart(2, "0");
       const d = String(date.getUTCDate()).padStart(2, "0");
       return `${y}-${m}-${d}`;
+    }
+
+    function updateSelectedDateUI() {
+      if (!selectedDateKey) {
+        selectedDateLabel.textContent =
+          "Select a date to set a publish date or manage scheduled puzzles.";
+        scheduledActions.style.display = "none";
+        return;
+      }
+
+      const scheduledPuzzle = scheduledPuzzles.get(selectedDateKey);
+      if (scheduledPuzzle) {
+        selectedDateLabel.textContent = `Selected ${selectedDateKey} (scheduled puzzle).`;
+        scheduledActions.style.display = "flex";
+      } else {
+        selectedDateLabel.textContent = `Selected ${selectedDateKey} (open date).`;
+        scheduledActions.style.display = "none";
+      }
+    }
+
+    function selectDate(key) {
+      selectedDateKey = key;
+      if (key) {
+        publishAtInput.value = key;
+      }
+      if (replaceTargetKey && replaceTargetKey !== key) {
+        replaceTargetId = null;
+        replaceTargetKey = "";
+      }
+      updateSelectedDateUI();
+      renderCalendar();
     }
 
     function renderCalendar() {
@@ -218,9 +267,25 @@
         const isScheduled = scheduledDates.has(key);
         cell.textContent = day;
         cell.className = `calendar-day ${isScheduled ? "is-scheduled" : "is-empty"}`;
+        cell.setAttribute("role", "button");
+        cell.setAttribute("tabindex", "0");
+        cell.dataset.dateKey = key;
+        if (key === selectedDateKey) {
+          cell.classList.add("is-selected");
+        }
+        if (isScheduled) {
+          cell.title = "Scheduled puzzle";
+        }
         if (key === todayKey) {
           cell.classList.add("is-today");
         }
+        cell.addEventListener("click", () => selectDate(key));
+        cell.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectDate(key);
+          }
+        });
         calendarGrid.appendChild(cell);
       }
     }
@@ -243,15 +308,38 @@
         }
         if (!res.ok) throw new Error("Unable to load puzzles");
         const data = await res.json();
-        scheduledDates = new Set(
-          (data.puzzles || [])
-            .map((puzzle) => puzzle.publish_at)
-            .filter(Boolean)
-            .map((dateString) => formatDateKey(new Date(dateString)))
-        );
+        scheduledPuzzles = new Map();
+        (data.puzzles || [])
+          .filter((puzzle) => puzzle.publish_at)
+          .forEach((puzzle) => {
+            const key = formatDateKey(new Date(puzzle.publish_at));
+            scheduledPuzzles.set(key, { id: puzzle.id, publishAt: puzzle.publish_at });
+          });
+        scheduledDates = new Set(Array.from(scheduledPuzzles.keys()));
         renderCalendar();
+        updateSelectedDateUI();
       } catch (error) {
         calendarLabel.textContent = "Unable to load scheduled dates.";
+      }
+    }
+
+    async function deletePuzzle(puzzleId) {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        throw new Error("You are not authenticated.");
+      }
+      const res = await fetch("/.netlify/functions/delete-puzzle", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ id: puzzleId })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Delete failed.");
       }
     }
 
@@ -312,6 +400,19 @@
       imagePreview.src = previewUrl;
     });
 
+    publishAtInput.addEventListener("change", () => {
+      const key = publishAtInput.value;
+      if (key && key !== selectedDateKey) {
+        selectedDateKey = key;
+        updateSelectedDateUI();
+        renderCalendar();
+      }
+      if (replaceTargetKey && replaceTargetKey !== key) {
+        replaceTargetId = null;
+        replaceTargetKey = "";
+      }
+    });
+
     prevMonthBtn.addEventListener("click", () => {
       currentMonth = new Date(Date.UTC(currentMonth.getUTCFullYear(), currentMonth.getUTCMonth() - 1, 1));
       renderCalendar();
@@ -322,10 +423,44 @@
       renderCalendar();
     });
 
+    replaceBtn.addEventListener("click", () => {
+      const scheduledPuzzle = scheduledPuzzles.get(selectedDateKey);
+      if (!scheduledPuzzle) return;
+      replaceTargetId = scheduledPuzzle.id;
+      replaceTargetKey = selectedDateKey;
+      publishAtInput.value = selectedDateKey;
+      setStatus(
+        uploadStatus,
+        `Upload will replace the puzzle scheduled for ${selectedDateKey}.`,
+        ""
+      );
+    });
+
+    removeBtn.addEventListener("click", async () => {
+      const scheduledPuzzle = scheduledPuzzles.get(selectedDateKey);
+      if (!scheduledPuzzle) return;
+      const confirmed = window.confirm(
+        `Remove the puzzle scheduled for ${selectedDateKey}? This cannot be undone.`
+      );
+      if (!confirmed) return;
+      setStatus(uploadStatus, "Removing scheduled puzzle...", "");
+      try {
+        await deletePuzzle(scheduledPuzzle.id);
+        setStatus(uploadStatus, "Scheduled puzzle removed.", "ok");
+        if (replaceTargetKey === selectedDateKey) {
+          replaceTargetId = null;
+          replaceTargetKey = "";
+        }
+        await loadSchedule();
+      } catch (error) {
+        setStatus(uploadStatus, error.message || "Remove failed.", "bad");
+      }
+    });
+
     uploadBtn.addEventListener("click", async () => {
       setStatus(uploadStatus, "", "");
       const image = document.getElementById("image").files[0];
-      const publishAt = document.getElementById("publishAt").value;
+      const publishAt = publishAtInput.value;
       const answer1a = document.getElementById("answer1a").value.trim();
       const answer1b = document.getElementById("answer1b").value.trim();
       const answer2a = document.getElementById("answer2a").value.trim();
@@ -355,6 +490,16 @@
         formData.append("hints", hints);
       }
 
+      if (replaceTargetId && replaceTargetKey === publishAt) {
+        setStatus(uploadStatus, "Removing existing puzzle...", "");
+        try {
+          await deletePuzzle(replaceTargetId);
+        } catch (error) {
+          setStatus(uploadStatus, error.message || "Replace failed.", "bad");
+          return;
+        }
+      }
+
       setStatus(uploadStatus, "Uploading...", "");
       const res = await fetch("/.netlify/functions/upload-puzzle", {
         method: "POST",
@@ -380,6 +525,8 @@
         `Uploaded! Image URL: ${response.image_url}`,
         "ok"
       );
+      replaceTargetId = null;
+      replaceTargetKey = "";
       await loadSchedule();
     });
 

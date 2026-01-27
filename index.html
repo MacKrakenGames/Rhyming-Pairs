@@ -26,7 +26,8 @@
     .wrap { max-width:900px; margin:0 auto; padding:24px; }
     header { display:flex; justify-content:space-between; align-items:center; gap:16px; }
     h1 { font-size:1.25rem; margin:0; color:var(--fg); }
-    .timer { font-variant-numeric:tabular-nums; padding:8px 12px; border:1px solid var(--border); border-radius:10px; color:var(--accent); }
+    .header-actions { display:flex; align-items:center; gap:10px; }
+    .timer { font-variant-numeric:tabular-nums; padding:8px 12px; border:1px solid var(--border); border-radius:10px; color:#0b2a1a; }
     .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; margin-top:16px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
     /* Responsive image stage that adapts to any aspect ratio */
     .imgbox { 
@@ -59,6 +60,15 @@
       position:relative;
       z-index:1;
     }
+    .puzzle-overlay {
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      z-index:2;
+    }
+    .puzzle-overlay.is-hidden { display:none; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
     @media (max-width:560px){ .row{ grid-template-columns:1fr; } }
     input[type="text"] { width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--field); color:var(--fg); font-family:"Fredoka One", system-ui, sans-serif; }
@@ -75,20 +85,38 @@
     .answer-input.match-ok { border-color:var(--ok); box-shadow:0 0 0 2px rgba(98,211,138,0.25); background:#123220; }
     .answer-input.match-root { border-color:var(--warn); box-shadow:0 0 0 2px rgba(231,211,106,0.25); background:#2a2a14; }
     .answer-input.match-bad { border-color:var(--bad); box-shadow:0 0 0 2px rgba(255,143,143,0.2); background:#2a1515; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(4,14,9,0.75); display:none; align-items:center; justify-content:center; padding:16px; z-index:1000; }
+    .modal-backdrop.is-open { display:flex; }
+    .modal { max-width:560px; width:100%; background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:20px; box-shadow:0 20px 40px rgba(0,0,0,0.4); }
+    .modal h2 { margin-top:0; }
+    .modal-page { display:none; }
+    .modal-page.is-active { display:block; }
+    .modal-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; flex-wrap:wrap; }
+    .modal-footer .actions { margin-top:0; }
+    .tutorial-example { margin-top:8px; padding:10px 12px; background:var(--field); border-radius:12px; border:1px solid var(--border); font-size:.95rem; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <h1>Rhyming Pairs <span id="puzzleNum" class="pill"></span></h1>
-      <div class="timer" id="timer">00:00.0</div>
+      <div class="header-actions">
+        <button id="tutorialBtn" type="button">Tutorial</button>
+        <div class="timer" id="timer">00:00.0</div>
+      </div>
     </header>
 
     <div class="card">
       <div class="imgbox">
         <img id="puzzleImg" alt="Puzzle image" />
+        <img id="puzzleOverlay" class="puzzle-overlay" src="art/overlay.png" alt="Puzzle hidden" />
       </div>
       <div id="availabilityNotice" class="notice" role="status" aria-live="polite"></div>
+
+      <div class="actions">
+        <button id="displayPuzzleBtn" type="button">Display Puzzle</button>
+        <span class="small">Reveal the image to start your timer.</span>
+      </div>
 
       <div class="row">
         <input id="pairA1" class="answer-input" type="text" placeholder="first phrase — word 1 (e.g., cracked)" autocomplete="off" />
@@ -111,6 +139,38 @@
 
     <div class="card small">
       <div><strong>How to win:</strong> Enter the two 2-word phrases that the image depicts (order doesn’t matter). Example target set: <code>cracked stones</code> + <code>stacked crones</code>.</div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="tutorialModal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+      <div class="modal-page is-active" data-page="0">
+        <h2 id="tutorialTitle">How to Play</h2>
+        <ol>
+          <li><strong>Decode the image.</strong> The surreal scene depicts two different objects or concepts mixed together.</li>
+          <li><strong>Find the swap.</strong> The two answers are a Spoonerism: two phrases that sound identical, except their starting sounds are swapped.</li>
+          <li><strong>The example.</strong>
+            <div class="tutorial-example">
+              Parrot Cage &harr; Carrot Page<br />
+              Hot Dog &harr; Dot Hog
+            </div>
+          </li>
+          <li><strong>Win the game.</strong> Type both pairs of words to solve the puzzle!</li>
+        </ol>
+      </div>
+      <div class="modal-page" data-page="1">
+        <h2>Hint mechanics</h2>
+        <p><strong>Check Words (+60s)</strong> acts like a hint. It highlights which words are correct so far, but every use adds 60 seconds to your timer.</p>
+        <p>Use it sparingly if you want the fastest time, or lean on it when you’re stuck.</p>
+      </div>
+      <div class="modal-footer">
+        <span class="small" id="tutorialPageStatus">Page 1 of 2</span>
+        <div class="actions">
+          <button id="tutorialBackBtn" type="button">Back</button>
+          <button id="tutorialNextBtn" type="button">Next</button>
+          <button id="tutorialCloseBtn" type="button">Close</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -288,6 +348,8 @@
     const $status = document.getElementById("status");
     const $num = document.getElementById("puzzleNum");
     const $notice = document.getElementById("availabilityNotice");
+    const $overlay = document.getElementById("puzzleOverlay");
+    const $displayBtn = document.getElementById("displayPuzzleBtn");
     const $a1 = document.getElementById("pairA1");
     const $a2 = document.getElementById("pairA2");
     const $b1 = document.getElementById("pairB1");
@@ -296,11 +358,26 @@
     const $wordCheck = document.getElementById("wordCheckBtn");
     const $skip = document.getElementById("skipBtn");
 
+    let isPuzzleLoaded = false;
+    let isPuzzleRevealed = false;
+
     function setStatus(msg,cls){ $status.textContent = msg; $status.className = `status ${cls||''}`; }
     function setNotice(msg){ $notice.textContent = msg; }
 
     function disableUI(disabled=true){
       [$a1,$a2,$b1,$b2,$check,$wordCheck,$skip].forEach(el=> el.disabled = disabled);
+    }
+
+    function updateRevealState() {
+      if (isPuzzleRevealed) {
+        $overlay.classList.add("is-hidden");
+        $displayBtn.disabled = true;
+        $displayBtn.textContent = "Puzzle Displayed";
+      } else {
+        $overlay.classList.remove("is-hidden");
+        $displayBtn.disabled = !isPuzzleLoaded;
+        $displayBtn.textContent = "Display Puzzle";
+      }
     }
 
     function startTimer() {
@@ -356,6 +433,12 @@
       $num.textContent = `#${ix+1}/${PUZZLES.length}`;
       [$a1,$a2,$b1,$b2].forEach(el => el.value = "");
       $status.textContent = ""; $status.className = "status"; penaltyMs = 0;
+      elapsedMs = 0;
+      stopTimer();
+      $timer.textContent = formatMs(elapsedMs);
+      isPuzzleLoaded = false;
+      isPuzzleRevealed = false;
+      updateRevealState();
       applyMatchClasses([]);
       setNotice(availabilityNotice);
       disableUI(true);
@@ -372,14 +455,20 @@
         if (targetH > maxH) targetH = maxH;    // constrain overly tall images
         stage.style.height = targetH + 'px';
         $img.src = p.img; 
-        disableUI(false); 
-        $a1.focus(); 
-        startTimer(); 
+        isPuzzleLoaded = true;
+        updateRevealState();
+        if (isPuzzleRevealed) {
+          disableUI(false);
+          $a1.focus();
+          startTimer();
+        }
       };
       img.onerror = () => { 
         const stage = document.querySelector('.imgbox');
         stage.style.height = 'auto';
         setStatus("Image failed to load. Check the path in puzzles.json.", "bad"); 
+        isPuzzleLoaded = false;
+        updateRevealState();
         disableUI(false); 
       };
       img.src = p.img;
@@ -461,6 +550,59 @@
       const idx = selectPuzzleForToday(PUZZLES);
       loadPuzzleByIndex(idx);
     }
+
+    const tutorialBtn = document.getElementById("tutorialBtn");
+    const tutorialModal = document.getElementById("tutorialModal");
+    const tutorialPages = Array.from(document.querySelectorAll(".modal-page"));
+    const tutorialPageStatus = document.getElementById("tutorialPageStatus");
+    const tutorialBackBtn = document.getElementById("tutorialBackBtn");
+    const tutorialNextBtn = document.getElementById("tutorialNextBtn");
+    const tutorialCloseBtn = document.getElementById("tutorialCloseBtn");
+    let tutorialPageIndex = 0;
+
+    function renderTutorialPage() {
+      tutorialPages.forEach((page, index) => {
+        page.classList.toggle("is-active", index === tutorialPageIndex);
+      });
+      tutorialPageStatus.textContent = `Page ${tutorialPageIndex + 1} of ${tutorialPages.length}`;
+      tutorialBackBtn.style.display = tutorialPageIndex === 0 ? "none" : "inline-flex";
+      tutorialNextBtn.style.display = tutorialPageIndex === tutorialPages.length - 1 ? "none" : "inline-flex";
+    }
+
+    function openTutorial() {
+      tutorialPageIndex = 0;
+      renderTutorialPage();
+      tutorialModal.classList.add("is-open");
+      tutorialModal.setAttribute("aria-hidden", "false");
+    }
+
+    function closeTutorial() {
+      tutorialModal.classList.remove("is-open");
+      tutorialModal.setAttribute("aria-hidden", "true");
+    }
+
+    tutorialBtn.addEventListener("click", openTutorial);
+    tutorialBackBtn.addEventListener("click", () => {
+      tutorialPageIndex = Math.max(0, tutorialPageIndex - 1);
+      renderTutorialPage();
+    });
+    tutorialNextBtn.addEventListener("click", () => {
+      tutorialPageIndex = Math.min(tutorialPages.length - 1, tutorialPageIndex + 1);
+      renderTutorialPage();
+    });
+    tutorialCloseBtn.addEventListener("click", closeTutorial);
+    tutorialModal.addEventListener("click", (event) => {
+      if (event.target === tutorialModal) closeTutorial();
+    });
+
+    $displayBtn.addEventListener("click", () => {
+      if (!isPuzzleLoaded) return;
+      isPuzzleRevealed = true;
+      updateRevealState();
+      disableUI(false);
+      $a1.focus();
+      startTimer();
+    });
 
     // Events
     $check.addEventListener("click", checkAnswer);
