@@ -2,7 +2,7 @@ const { createClient } = require("@supabase/supabase-js");
 
 const BUCKET = "puzzleimages";
 
-exports.handler = async () => {
+exports.handler = async (event) => {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -13,14 +13,34 @@ exports.handler = async () => {
     };
   }
 
+  const authHeader = event.headers.authorization || event.headers.Authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return { statusCode: 401, body: JSON.stringify({ error: "Unauthorized" }) };
+  }
+  const token = authHeader.replace("Bearer ", "").trim();
+
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const today = new Date().toISOString();
+  const { data: authData, error: authError } = await supabase.auth.getUser(
+    token
+  );
+  if (authError || !authData?.user) {
+    return { statusCode: 401, body: JSON.stringify({ error: "Unauthorized" }) };
+  }
+
+  const adminAllowlist = (process.env.ADMIN_EMAIL_ALLOWLIST || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  const userEmail = authData.user.email?.toLowerCase();
+  if (!userEmail || !adminAllowlist.includes(userEmail)) {
+    return { statusCode: 403, body: JSON.stringify({ error: "Forbidden" }) };
+  }
+
   const { data, error } = await supabase
     .from("puzzles")
     .select(
       "id,image_path,answer_1a,answer_1b,answer_2a,answer_2b,hints,publish_at"
     )
-    .lte("publish_at", today)
     .order("publish_at", { ascending: true });
 
   if (error) {
